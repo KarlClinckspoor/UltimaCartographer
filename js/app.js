@@ -11,8 +11,10 @@
 //   render(mapId, params) -> view, or a Promise of one:
 //   view = {
 //     title, subtitle, width, height,   size in game squares; square (x, y) spans x..x+1, y..y+1
-//     images: [{src, layer?}],          pixel images (URL, data URL or canvas) stretched over the map,
-//                                       drawn first, in order; with a layer id they can be switched off
+//     images: [{src, layer?, at?}],     pixel images (URL, data URL or canvas) stretched over the map,
+//                                       or over at = [x, y, width, height] in squares; drawn first, in
+//                                       order; with a layer id they can be switched off
+//     native,                           image pixels per square (else worked out from the first image)
 //     svg,                              markup with viewBox 0 0 width height, drawn over the images;
 //                                       toggleable parts in elements with data-layer="<layer id>"
 //     layers: [{id, name, swatch, on?}],
@@ -130,12 +132,13 @@ async function show({focus, initialView, keepView} = {}) {
   const bounds = L.latLngBounds(toLatLng(0, view.height), toLatLng(view.width, 0));
   images = (view.images || []).map(i => ({
     layer: i.layer,
-    overlay: L.imageOverlay(i.src instanceof HTMLCanvasElement ? i.src.toDataURL() : i.src, bounds,
+    overlay: L.imageOverlay(i.src instanceof HTMLCanvasElement ? i.src.toDataURL() : i.src,
+      i.at ? L.latLngBounds(toLatLng(i.at[0], i.at[1] + i.at[3]), toLatLng(i.at[0] + i.at[2], i.at[1])) : bounds,
       {interactive: false, className: 'pixel-image'}).addTo(map),
   }));
   // Pixel art: crisp when drawn at its own size or bigger, smoothed when shrunk.
   const first = view.images?.[0]?.src;
-  nativeZoom = first instanceof HTMLCanvasElement ? Math.log2(first.width / view.width) : null;
+  nativeZoom = view.native ? Math.log2(view.native) : first instanceof HTMLCanvasElement ? Math.log2(first.width / view.width) : null;
   pixelMode();
   const svg = new DOMParser().parseFromString(view.svg || `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${view.width} ${view.height}"/>`, 'image/svg+xml').documentElement;
   overlay = L.svgOverlay(svg, bounds, {interactive: false}).addTo(map);
