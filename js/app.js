@@ -3,14 +3,18 @@
 //
 // A game module:
 //   id, title, version             shown in the game list
-//   params: [{key, label, type: 'int', def, min, max, help, random?}]   inputs in the side panel
+//   params: [{key, label, type: 'int', def, min, max, help, random?,
+//             file?: {label, accept, read(ArrayBuffer) -> value (throws an Error with a message)}}]
 //   transient: ['key']             params dropped when changing map unless a link sets them
 //   defaultMap
-//   maps(params, mapId) -> [{id, name, group?, title?}]
-//   render(mapId, params) -> {
+//   maps(params, mapId) -> [{id, name, group?, title?}]   groups show as collapsible lists
+//   render(mapId, params) -> view, or a Promise of one:
+//   view = {
 //     title, subtitle, width, height,   size in game squares; square (x, y) spans x..x+1, y..y+1
-//     svg,                              markup with viewBox 0 0 width height; toggleable parts in
-//                                       elements with data-layer="<layer id>"
+//     images: [{src, layer?}],          pixel images (URL, data URL or canvas) stretched over the map,
+//                                       drawn first, in order; with a layer id they can be switched off
+//     svg,                              markup with viewBox 0 0 width height, drawn over the images;
+//                                       toggleable parts in elements with data-layer="<layer id>"
 //     layers: [{id, name, swatch, on?}],
 //     features: [{name, x, y, detail?}], what search finds
 //     cell(x, y) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}]} | null
@@ -26,8 +30,13 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;',
 
 const state = {game: null, mapId: null, params: {}};
 const hidden = {};            // game id -> Set of layer ids switched off
+const seenLayers = {};        // game id -> Set of layer ids already given their default
 let view = null;              // what render() returned for the current map
 let overlay = null;
+let images = [];              // [{overlay, layer}]
+let showing = 0;
+let fileNote = null;
+let nativeZoom = null;        // the zoom at which the pixel images show one image pixel per screen pixel          // what the last save file read gave, shown under its input              // the latest show() call; an older one that finishes late is dropped
 
 const map = L.map('map', {
   crs: L.CRS.Simple, minZoom: 1, maxZoom: 8, zoomSnap: 0.25, zoomDelta: 0.5,
@@ -95,20 +104,40 @@ function go({game = state.game, mapId, params, focus, push = true} = {}) {
   if (!gameChanged && mapId !== state.mapId) for (const k of game.transient || []) delete p[k];
   if (params) for (const [k, v] of Object.entries(params)) if (v === null) delete p[k]; else p[k] = v;
   state.game = game; state.mapId = mapId; state.params = normalize(game, p);
+  if (push) history.pushState(null, '', hashFor(game, mapId, state.params, null));
   show({focus, keepView: !gameChanged && !focus && mapId === view?.mapId});
-  writeHash(push);
 }
 
-function show({focus, initialView, keepView} = {}) {
+async function show({focus, initialView, keepView} = {}) {
   const {game, mapId, params} = state;
+  const ticket = ++showing;
   const before = keepView ? currentView() : null;
+  let v;
+  try {
+    v = await game.render(mapId, params);
+  } catch (e) {
+    console.error(e);
+    $('#map-title').innerHTML = `Could not draw this map<small>${esc(e.message)}</small>`;
+    return;
+  }
+  if (ticket !== showing) return;
   map.closePopup();
-  view = game.render(mapId, params);
+  view = v;
   view.mapId = mapId;
 
   if (overlay) overlay.remove();
-  const svg = new DOMParser().parseFromString(view.svg, 'image/svg+xml').documentElement;
+  for (const i of images) i.overlay.remove();
   const bounds = L.latLngBounds(toLatLng(0, view.height), toLatLng(view.width, 0));
+  images = (view.images || []).map(i => ({
+    layer: i.layer,
+    overlay: L.imageOverlay(i.src instanceof HTMLCanvasElement ? i.src.toDataURL() : i.src, bounds,
+      {interactive: false, className: 'pixel-image'}).addTo(map),
+  }));
+  // Pixel art: crisp when drawn at its own size or bigger, smoothed when shrunk.
+  const first = view.images?.[0]?.src;
+  nativeZoom = first instanceof HTMLCanvasElement ? Math.log2(first.width / view.width) : null;
+  pixelMode();
+  const svg = new DOMParser().parseFromString(view.svg || `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${view.width} ${view.height}"/>`, 'image/svg+xml').documentElement;
   overlay = L.svgOverlay(svg, bounds, {interactive: false}).addTo(map);
   map.setMaxBounds(bounds.pad(0.5));
   hoverRect.remove(); selRect.remove();
@@ -124,6 +153,7 @@ function show({focus, initialView, keepView} = {}) {
   drawPanel();
   applyLayers();
   if (focus) openCell(focus[0], focus[1], true);
+  writeHash(false);
 }
 
 // ---------- side panel ----------
@@ -146,8 +176,21 @@ function drawPanel() {
         <input id="p-${d.key}" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">
         ${d.random ? `<button class="btn" data-random="${d.key}" title="Pick a random one">Random</button>` : ''}
       </div>
+      ${d.file ? `<div class="row file-row"><label class="btn file-btn">${esc(d.file.label)}<input type="file" data-file="${d.key}" accept="${esc(d.file.accept || '')}" hidden></label><span class="muted" id="f-${d.key}"></span></div>` : ''}
       ${d.help ? `<p class="muted">${esc(d.help)}</p>` : ''}
     </div>`).join('');
+  for (const inp of document.querySelectorAll('[data-file]')) inp.onchange = async () => {
+    const d = game.params.find(x => x.key === inp.dataset.file), f = inp.files[0];
+    if (!f) return;
+    try {
+      const v = d.file.read(await f.arrayBuffer());
+      fileNote = {key: d.key, text: `Read ${v} from ${f.name}`};
+      go({params: {[d.key]: v}});
+    } catch (e) {
+      $(`#f-${d.key}`).textContent = e.message;
+    }
+  };
+  if (fileNote && $(`#f-${fileNote.key}`)) $(`#f-${fileNote.key}`).textContent = fileNote.text;
   for (const d of game.params || []) {
     const el = $(`#p-${d.key}`);
     el.onchange = () => go({params: {[d.key]: el.value}});
@@ -155,14 +198,20 @@ function drawPanel() {
   for (const b of document.querySelectorAll('[data-random]'))
     b.onclick = () => go({params: {[b.dataset.random]: Math.floor(Math.random() * 100000)}});
 
-  let group = null;
-  $('#maps').innerHTML = game.maps(params, mapId).map(m => {
-    const head = m.group !== group ? `<div class="group">${esc((group = m.group) || '')}</div>` : '';
-    return `${head}<button data-map="${esc(m.id)}" class="${m.id === mapId ? 'current' : ''}" title="${esc(m.title || m.name)}">${esc(m.name)}</button>`;
-  }).join('');
+  const groups = [];
+  for (const m of game.maps(params, mapId)) {
+    if (!groups.length || groups.at(-1).name !== (m.group || '')) groups.push({name: m.group || '', maps: []});
+    groups.at(-1).maps.push(m);
+  }
+  const btn = m => `<button data-map="${esc(m.id)}" class="${m.id === mapId ? 'current' : ''}" title="${esc(m.title || m.name)}">${esc(m.name)}</button>`;
+  $('#maps').innerHTML = groups.map(g => g.name
+    ? `<details ${g.maps.some(m => m.id === mapId) || groups.length <= 3 ? 'open' : ''}><summary>${esc(g.name)}</summary><div class="btns">${g.maps.map(btn).join('')}</div></details>`
+    : `<div class="btns">${g.maps.map(btn).join('')}</div>`).join('');
   for (const b of document.querySelectorAll('#maps button')) b.onclick = () => go({mapId: b.dataset.map});
 
-  const off = hidden[game.id] ||= new Set(view.layers.filter(l => l.on === false).map(l => l.id));
+  const off = hidden[game.id] ||= new Set();
+  const seen = seenLayers[game.id] ||= new Set();
+  for (const l of view.layers) if (!seen.has(l.id)) { seen.add(l.id); if (l.on === false) off.add(l.id); }
   $('#layers').innerHTML = view.layers.map(l => `
     <li><label><input type="checkbox" data-layer="${l.id}" ${off.has(l.id) ? '' : 'checked'}>
       ${l.swatch || ''}<span>${esc(l.name)}</span></label></li>`).join('');
@@ -186,6 +235,7 @@ function applyLayers() {
   const off = hidden[state.game.id] || new Set();
   for (const el of overlay.getElement().querySelectorAll('[data-layer]'))
     el.style.display = off.has(el.dataset.layer) ? 'none' : '';
+  for (const i of images) if (i.layer) i.overlay.getElement().style.display = off.has(i.layer) ? 'none' : '';
 }
 
 function search() {
@@ -230,6 +280,10 @@ map.on('mousemove', e => {
 });
 map.on('click', e => { const c = cellAt(e.latlng); if (c) openCell(c[0], c[1], false); });
 map.on('moveend', () => { if (state.game) writeHash(false); });
+function pixelMode() {
+  map.getContainer().classList.toggle('pixels-crisp', nativeZoom === null || map.getZoom() >= nativeZoom - 0.01);
+}
+map.on('zoomend', pixelMode);
 
 $('#side-toggle').onclick = () => {
   $('#side').classList.toggle('collapsed');
@@ -247,5 +301,4 @@ drawGames();
   const h = readHash();
   state.game = h.game; state.mapId = h.mapId; state.params = h.params;
   show({initialView: h.view});
-  writeHash(false);
 }

@@ -42,13 +42,18 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1
 .param .row button { flex: none; }
 .param p { margin: 4px 0 0; }
 
-button.btn, #maps button {
+button.btn, label.btn, #maps button {
   font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 10px; cursor: pointer;
 }
-button.btn:hover, #maps button:hover { border-color: var(--accent); }
-#maps { display: flex; flex-wrap: wrap; gap: 6px; }
-#maps .group { width: 100%; margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+button.btn:hover, label.btn:hover, #maps button:hover { border-color: var(--accent); }
+#maps .btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
+#maps details summary { cursor: pointer; padding: 4px 0; font-size: 13px; color: var(--muted); }
+#maps details summary:hover, #maps details[open] summary { color: var(--text); }
+.file-row { margin-top: 6px; align-items: center; flex-wrap: wrap; }
+.file-row .muted { flex-basis: 100%; }
+.param label.file-btn { display: inline-block; font-weight: normal; margin: 0; white-space: nowrap; cursor: pointer; }
+.pixels-crisp .leaflet-image-layer.pixel-image { image-rendering: pixelated; }
 #maps button.current { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 #maps button.wide { min-width: 0; }
 
