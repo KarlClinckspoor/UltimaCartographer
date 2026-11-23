@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ultima Cartographer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23121310'/%3E%3Cpath d='M3 12L8 3l5 9z' fill='none' stroke='%23e0b354' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<aside id="side">
+  <header class="brand">
+    <h1>Ultima Cartographer</h1>
+    <button id="side-toggle" class="icon-btn" aria-label="Toggle panel" title="Toggle panel">☰</button>
+  </header>
+  <div id="side-body">
+    <section>
+      <label class="sec" for="game">Game</label>
+      <select id="game"></select>
+      <p id="game-version" class="muted"></p>
+    </section>
+    <section id="params"></section>
+    <section>
+      <h2 class="sec">Maps</h2>
+      <nav id="maps"></nav>
+    </section>
+    <section>
+      <h2 class="sec">Search</h2>
+      <input id="search" type="search" placeholder="Find on this map…" autocomplete="off">
+      <ul id="results"></ul>
+    </section>
+    <section>
+      <h2 class="sec">Layers</h2>
+      <ul id="layers"></ul>
+    </section>
+    <section id="info"></section>
+    <footer class="muted">
+      A fan project, not affiliated with Origin Systems or Electronic Arts.
+      Maps are computed from the games' own data and generators.
+      The idea of an interactive Ultima map comes from kxmode's Ultima VII map.
+      Built with <a href="https://leafletjs.com">Leaflet</a>.
+    </footer>
+  </div>
+</aside>
+<main>
+  <div id="map-title"></div>
+  <div id="map"></div>
+</main>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
