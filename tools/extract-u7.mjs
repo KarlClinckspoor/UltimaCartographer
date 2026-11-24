@@ -108,7 +108,8 @@ for (let sc = 0; sc < 144; sc++) {
     const isContainerLike = len === 12 || len === 13;
     const lift = nibswap(len === 6 || len === 10 ? e[4] : e[len === 13 ? 10 : 9]) & 15;
     if (!depth) { objs.push({x: (scx + (e[0] >> 4)) * 16 + (e[0] & 15), y: (scy + (e[1] >> 4)) * 16 + (e[1] & 15), z: lift, s, f, q: len === 6 || len === 10 ? e[5] : e[7], fixed: 0}); iregCount++; }
-    if (isContainerLike && (e[4] | e[5] << 8)) depth++;   // its contents follow, ended by a 0 or 1
+    // its contents follow, ended by a 0 or 1; eggs, barges and virtue stones use these bytes for other things (Exult read_ireg_objects)
+    if (isContainerLike && ![7, 9, 11].includes(cls(s)) && (e[4] | e[5] << 8)) depth++;
   }
 }
 for (const o of objs) if (cls(o.s) !== 7) used.add(key(o.s, o.f));
