@@ -242,7 +242,7 @@ A fan project, not affiliated with or endorsed by Electronic Arts or Origin Syst
 maps, pictures and words drawn here from their files, belong to their owners: they were made by Richard
 Garriott and the people of Origin Systems (Akalabeth by Richard Garriott, published by California Pacific).
 
-**The idea.** An interactive Ultima map comes from kxmode's Ultima VII map.
+**The idea.** An interactive Ultima map comes from the Ultima VII map by [kxmode (Ryan Allen)](https://www.kxmode.com/).
 
 **The decompilations** this site reads its tables, formats and rules from, and the people who started them:
 
