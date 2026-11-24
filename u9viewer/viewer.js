@@ -467,7 +467,9 @@ const readHash = () => Object.fromEntries(new URLSearchParams(location.hash.slic
     S.terrainTex = await textureArray(tt.size, tt.count, tt.files);
     const h = readHash(), id = +(h.map || 9);
     requestAnimationFrame(frame);
-    await loadMap(S.manifest.maps.some(m => m.id === id) ? id : S.manifest.maps[0].id, h.x ? {x: +h.x, y: +h.y, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null);
+    // a hand-edited address can hold anything: a camera with a NaN in it draws nothing (move() lifts a low y above the ground)
+    const place = Number.isFinite(+h.x) && Number.isFinite(+h.z) && h.x && h.z ? {x: +h.x, y: Number.isFinite(+h.y) && h.y ? +h.y : 0, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null;
+    await loadMap(S.manifest.maps.some(m => m.id === id) ? id : S.manifest.maps[0].id, place);
     loadModels().then(() => status(S.summary)).catch(e => status('Models: ' + e.message));
     setInterval(() => { if (S.stats && !S.keys.size) $('#help').dataset.stats = `${S.stats.tilesDrawn} tiles, ${S.stats.objsDrawn} objects`; }, 500);
   } catch (e) { status(e.message); console.error(e); }
