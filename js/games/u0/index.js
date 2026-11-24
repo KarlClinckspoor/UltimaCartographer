@@ -70,6 +70,23 @@ const glyph = {
   arrival: (x, y) => `<rect x="${x + .05}" y="${y + .05}" width=".9" height=".9" fill="none" stroke="#ffffff" stroke-width=".05" stroke-dasharray=".1 .07" rx=".1"/>`,
 };
 
+// The game's own pictures (akworld.cc drawworld): each square a 58 x 53 picture of light cyan lines on black,
+// plains left empty. Coordinates here are the game's pixels within the square.
+const CYAN = '#55ffff';
+const orig = (() => {
+  const L = (x, y, pts) => `<path d="${pts.map(([a, b], i) => `${i ? 'L' : 'M'}${f(x + a / 58)} ${f(y + b / 53)}`).join('')}" fill="none" stroke="${CYAN}" stroke-width=".035" stroke-linecap="square"/>`;
+  const R = (x, y, a, b, c, d) => `<rect x="${f(x + a / 58)}" y="${f(y + b / 53)}" width="${f((c - a) / 58)}" height="${f((d - b) / 53)}" fill="none" stroke="${CYAN}" stroke-width=".035"/>`;
+  return {
+    mountain: (x, y) => L(x, y, [[12, 53], [12, 42], [23, 31], [46, 31], [46, 53]]) + L(x, y, [[0, 10], [12, 10]]) + L(x, y, [[58, 10], [46, 10]]) +
+      L(x, y, [[0, 42], [12, 42]]) + L(x, y, [[46, 42], [58, 42]]) + L(x, y, [[12, 0], [12, 21], [23, 21], [23, 31], [35, 31], [35, 11]]) + L(x, y, [[35, 10], [46, 10], [46, 0]]),
+    tree: (x, y) => R(x, y, 23, 21, 35, 31),
+    town: (x, y) => R(x, y, 11, 10, 23, 21) + R(x, y, 35, 10, 46, 21) + R(x, y, 23, 21, 35, 31) + R(x, y, 11, 31, 23, 43) + R(x, y, 35, 31, 46, 43),
+    dungeon: (x, y) => L(x, y, [[23, 21], [34, 31]]) + L(x, y, [[23, 31], [34, 21]]),
+    castle: (x, y) => R(x, y, 0, 0, 58, 53) + R(x, y, 12, 10, 46, 42) + L(x, y, [[12, 10], [46, 42]]) + L(x, y, [[46, 10], [12, 42]]),
+  };
+})();
+const swO = k => swatch(rect(0, 0, 1, 1, '#000') + orig[k](0, 0));
+
 const sw = {
   grid: swatch(rect(0, 0, 1, 1, C.plains) + path('M.5 0V1M0 .5H1', '#888', .06)),
   terrain: swatch(rect(0, 0, 1, 1, C.plains) + glyph.mountain(0, 0)),
@@ -95,7 +112,8 @@ const p = (...lines) => lines.map(l => `<p>${l}</p>`).join('');
 // ---------- the world ----------
 
 function renderWorld(params) {
-  const {lucky} = params;
+  const {lucky} = params, game = !params.art;   // art 0: the game's pictures
+  const G = game ? orig : glyph;
   const {w, town, castle} = world(lucky);
   const castleLost = w[castle[0]][castle[1]] !== LAND.CASTLE;
   const parts = {terrain: '', trees: '', towns: '', dungeons: '', castle: ''};
@@ -104,15 +122,16 @@ function renderWorld(params) {
   for (let x = 0; x < 21; x++) for (let y = 0; y < 21; y++) {
     const v = w[x][y];
     if (x && y && x < 20 && y < 20) count[v]++;
-    parts.terrain += v === LAND.MOUNTAINS ? rect(x, y, 1, 1, C.mountainBg) + glyph.mountain(x, y) : rect(x, y, 1, 1, C.plains) + glyph.plainsDots(x, y);
-    if (v === LAND.TREE) parts.trees += glyph.tree(x, y);
-    if (v === LAND.TOWN) { parts.towns += glyph.town(x, y); features.push({name: x === town[0] && y === town[1] ? 'Starting town' : 'Town', x, y}); }
-    if (v === LAND.DUNGEON) { parts.dungeons += glyph.dungeon(x, y); features.push({name: 'Dungeon', x, y}); }
-    if (v === LAND.CASTLE) { parts.castle += glyph.castle(x, y); features.push({name: 'Castle of Lord British', x, y}); }
+    parts.terrain += game ? (v === LAND.MOUNTAINS ? orig.mountain(x, y) : '')
+      : v === LAND.MOUNTAINS ? rect(x, y, 1, 1, C.mountainBg) + glyph.mountain(x, y) : rect(x, y, 1, 1, C.plains) + glyph.plainsDots(x, y);
+    if (v === LAND.TREE) parts.trees += G.tree(x, y);
+    if (v === LAND.TOWN) { parts.towns += G.town(x, y); features.push({name: x === town[0] && y === town[1] ? 'Starting town' : 'Town', x, y}); }
+    if (v === LAND.DUNGEON) { parts.dungeons += G.dungeon(x, y); features.push({name: 'Dungeon', x, y}); }
+    if (v === LAND.CASTLE) { parts.castle += G.castle(x, y); features.push({name: 'Castle of Lord British', x, y}); }
   }
   features.sort((a, b) => (a.name === 'Town') - (b.name === 'Town') || a.name.localeCompare(b.name) || a.y - b.y || a.x - b.x);
 
-  const svg = svgDoc(21, 21, parts.terrain + g('trees', parts.trees) + g('towns', parts.towns) +
+  const svg = svgDoc(21, 21, (game ? rect(0, 0, 21, 21, '#000') : '') + parts.terrain + g('trees', parts.trees) + g('towns', parts.towns) +
     g('dungeons', parts.dungeons) + g('castle', parts.castle) + g('grid', gridLines(21, 21)) + g('start', glyph.start(...town)));
 
   const enter = {label: 'Enter dungeon level 1', map: 'level-1', focus: [1, 1]};
@@ -146,10 +165,10 @@ function renderWorld(params) {
   return {
     title: 'The world', subtitle: `Lucky number ${lucky}`, width: 21, height: 21, svg, features, cell, info,
     layers: [
-      {id: 'trees', name: 'Trees', swatch: sw.trees},
-      {id: 'towns', name: 'Towns', swatch: sw.towns},
-      {id: 'dungeons', name: 'Dungeons', swatch: sw.dungeons},
-      {id: 'castle', name: 'Castle', swatch: sw.castle},
+      {id: 'trees', name: 'Trees', swatch: game ? swO('tree') : sw.trees},
+      {id: 'towns', name: 'Towns', swatch: game ? swO('town') : sw.towns},
+      {id: 'dungeons', name: 'Dungeons', swatch: game ? swO('dungeon') : sw.dungeons},
+      {id: 'castle', name: 'Castle', swatch: game ? swO('castle') : sw.castle},
       {id: 'start', name: 'Start', swatch: sw.start},
       {id: 'grid', name: 'Grid', swatch: sw.grid},
     ],
@@ -257,6 +276,8 @@ export default {
     {key: 'lucky', label: 'Lucky number', def: 1234, min: -2147483648, max: 2147483647, random: true,
       help: 'Seeds the world, every dungeon level and the stats offered.'},
     {key: 'play', label: 'Level of play (1–10)', def: 1, min: 1, max: 10, help: 'Only adds to the monsters’ hit points.'},
+    {key: 'art', label: 'Pictures', def: 0, min: 0, max: 1, options: [[0, 'The game’s'], [1, 'This site’s']],
+      help: 'The world in the game’s own line drawings, or redrawn. The game shows dungeons only in first person, so their maps are always this site’s.'},
   ],
   transient: ['at'],
   defaultMap: 'world',

@@ -3,7 +3,7 @@
 //
 // A game module:
 //   id, title, version             shown in the game list
-//   params: [{key, label, type: 'int', def, min, max, help, random?,
+//   params: [{key, label, type: 'int', def, min, max, help, random?, options?: [[value, label], ...] (a choice list),
 //             file?: {label, accept, read(ArrayBuffer) -> value (throws an Error with a message)}}]
 //   transient: ['key']             params dropped when changing map unless a link sets them
 //   defaultMap
@@ -231,7 +231,8 @@ function drawPanel() {
     <div class="param">
       <label for="p-${d.key}">${esc(d.label)}</label>
       <div class="row">
-        <input id="p-${d.key}" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">
+        ${d.options ? `<select id="p-${d.key}">${d.options.map(([v, l]) => `<option value="${v}" ${+params[d.key] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+    : `<input id="p-${d.key}" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">`}
         ${d.random ? `<button class="btn" data-random="${d.key}" title="Pick a random one">Random</button>` : ''}
       </div>
       ${d.file ? `<div class="row file-row"><label class="btn file-btn">${esc(d.file.label)}<input type="file" data-file="${d.key}" accept="${esc(d.file.accept || '')}" hidden></label><span class="muted" id="f-${d.key}"></span></div>` : ''}
