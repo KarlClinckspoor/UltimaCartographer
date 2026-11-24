@@ -9,10 +9,10 @@ function chunk(type, data) {
   return Buffer.concat([len, td, c]);
 }
 
-// rgb: Buffer of w * h * 3 bytes, row by row.
-export function png(w, h, rgb) {
-  const raw = Buffer.alloc((w * 3 + 1) * h);
-  for (let y = 0; y < h; y++) rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3);
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+// rgb: Buffer of w * h * 3 bytes (or 4 with alpha), row by row.
+export function png(w, h, rgb, channels = 3) {
+  const raw = Buffer.alloc((w * channels + 1) * h);
+  for (let y = 0; y < h; y++) rgb.copy(raw, y * (w * channels + 1) + 1, y * w * channels, (y + 1) * w * channels);
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = channels === 4 ? 6 : 2;
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw, {level: 9})), chunk('IEND', Buffer.alloc(0))]);
 }

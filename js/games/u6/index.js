@@ -1,0 +1,25 @@
+// Ultima VI: Britannia, the four dungeon levels beneath it and the Gargoyle lands, drawn by the shared
+// U6-engine module. Tables below are from u6-decompiled SRC (obj.h object numbers, npctrack.c).
+import {makeEngine} from './engine.js';
+
+// npctrack.c RedGateX/Y/Z: where a red gate of quality q sends you (q - 1).
+const RX = [0x383, 0x3A7, 0x1B3, 0x1F7, 0x093, 0x397, 0x044, 0x133, 0x0BC, 0x09F, 0x2E3, 0, 0, 0, 0x0E3, 0x017, 0x080, 0x06C, 0x39B, 0x127, 0x04B, 0x147, 0x183, 0x33F, 0x29B];
+const RY = [0x1F3, 0x106, 0x18B, 0x166, 0x373, 0x3A6, 0x02D, 0x160, 0x02D, 0x3AE, 0x2BB, 0, 0, 0, 0x083, 0x016, 0x056, 0x0DD, 0x36C, 0x026, 0x1FB, 0x336, 0x313, 0x0A6, 0x043];
+const RZ = [0, 0, 0, 0, 0, 0, 5, 0, 5, 0, 0, 0, 0, 0, 0, 1, 5, 5, 0, 0, 0, 0, 0, 0, 0];
+// npctrack.c DungeonNames: what Shamino calls the place a hole or mine shaft of quality q leads to.
+const DUNGEONS = ['Deceit', 'Despise', 'Destard', 'Wrong', 'Covetous', 'Shame', 'Hythloth', 'GSA', 'Control', 'Passion', 'Diligence',
+  'Tomb of Kings', 'Ant Mound', 'Swamp Cave', 'Spider Cave', 'Cyclops Cave', 'Heftimus Cave', "Heroes' Hole", 'Pirate Cave', "Buccaneer's Cave"];
+
+export default makeEngine({
+  id: 'u6', title: 'Ultima VI', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
+  startHour: 12, moonstones: true,
+  levels: ['Britannia', 'Underground, level 1', 'Underground, level 2', 'Underground, level 3', 'Underground, level 4', 'The Gargoyle lands'],
+  redGates: RX.map((x, i) => x || RY[i] ? [x, RY[i], RZ[i]] : null),
+  dungeonNames: DUNGEONS,
+  dungeonName: q => q < 8 ? `Dungeon ${DUNGEONS[q - 1]}` : q === 8 ? 'The Great Stygian Abyss' : q <= 11 ? `Shrine of ${DUNGEONS[q - 1]}` : DUNGEONS[q - 1],
+  objLadder: 0x131, objRedGate: 0x054, objEgg: 0x14F,
+  entranceTypes: [0x134, 0x146],   // OBJ_HOLE, OBJ_MINE_SHAFT
+  bookTypes: [0x097, 0x03D, 0x098, 0x10E, 0x03B],   // objcmd.c BookTypes: book, Book of Circles, note, balloon plans, Codex
+  signTypes: [0x14C, 0x14D, 0x08F, 0x0FE, 0x0FF],   // SignTypes: sign, gargoyle sign, picture, cross, tombstone
+  hidden: [0x14F],   // eggs are never drawn
+});

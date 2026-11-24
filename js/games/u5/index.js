@@ -1,0 +1,348 @@
+// Ultima V: Britannia and the Underworld, the 32 settlements floor by floor, the 8 dungeons and their
+// rooms, from the game files (data/u5, by tools/extract-u5.mjs). Townsfolk stand where their schedule
+// puts them at the hour chosen, and show their whole conversation. Game logic: u5-decompiled/u5d/src.
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json} from '../../lib/draw.js';
+
+const DATA = new URL('../../../data/u5/', import.meta.url);
+
+const SHOP_KIND = ['Armourer', 'Pub', 'Stables', 'Shipwright', 'Reagents', 'Provisioner', 'Healer', 'Inn'];   // dialog numbers 0x81-0x88
+const AI = {0: 'Stays put', 1: 'Wanders', 2: 'Wanders widely', 3: 'A child: runs away', 4: 'Keeps shop', 6: 'Demands, attacks or follows', 7: 'Drudges'};
+const DUNGEON_STYLE = [3, 1, 1, 3, 3, 2, 2, 1];   // DungeonMainLoop: 3 brick (Deceit, Wrong, Covetous), 2 cave (Shame, Hythloth), 1 stalactites
+const WALL_TEXT = [['Bottomless Pit'], ['The Maze of Lost Souls'], [], ['The Prison Wrong'], ['The Crypt', 'Upper Crypts', 'Lower Crypts', 'Debters Ally'], ['Deep', 'Deeper', 'Deepest'], ['Mother Lode Maze'], []];
+const FOUNTAIN = ['cures poison', 'heals fully', 'poisons', 'tastes bad (hurts)'];
+const FIELD = ['sleep', 'poison gas', 'fire', 'electric'];
+const ITEM = {1: 'a chest', 2: 'a sack of gold', 3: 'a potion', 4: 'a scroll', 5: 'a weapon', 6: 'a shield', 7: 'a ring of keys', 8: 'a gem', 9: 'a helm', 10: 'a ring',
+  11: 'some armour', 12: 'an amulet', 13: 'some torches', 15: 'some food', 0x19: 'a strange rock', 0x1E: 'a rotting body', 0x1F: 'a moldy corpse'};
+const EQUIP_ITEM = new Set([5, 6, 9, 10, 11, 12]), COUNT_ITEM = new Set([2, 7, 8, 13, 15]);
+const ENTRY_RULE = {13: 'Only while you have no keys.', 14: 'Once a day.', 15: 'Only while you do not own one.'};   // FindHiddenItem entries 0xd-0xf
+const KIND = n => n <= 8 ? 'Townes' : n <= 12 ? 'Lighthouses' : n <= 16 ? 'Huts' : n <= 18 ? 'Castles' : n <= 24 ? 'Villages' : n <= 32 ? 'Keeps' : 'Dungeons';
+const FLOOR = z => z < 0 ? 'Cellar' : z === 0 ? 'Ground floor' : `Upper floor ${z}`;
+const DUNGEON_TILE = new Set([0x16, 0x17, 0x18]);
+
+const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441', ladder: '#6cc5d9', chest: '#f0c419', event: '#b48cff',
+  shop: '#e0b354', talk: '#8cc6e0', gate: '#b48cff', sign: '#f4efe0', item: '#6cd98a', room: '#e57aa8', shrine: '#bff5c9', stair: '#c9a0ff'};
+
+let loading = null;
+const load = () => loading ||= (async () => {
+  const [d, tiles] = await Promise.all([json(new URL('u5.json', DATA), 'run tools/extract-u5.mjs'), image(new URL('tiles.png', DATA))]);
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0)), hex = h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16));
+  d.britBytes = b64(d.brit); d.underBytes = b64(d.under);
+  for (const t of Object.values(d.towns)) { t.bytes = {}; for (const [z, h] of Object.entries(t.floors)) t.bytes[z] = hex(h); t.people = t.people.filter(q => q.type); }
+  d.dungeonBytes = d.dungeons.map(hex);
+  for (const r of d.rooms) r.bytes = hex(r.map);
+  d.tiles = tiles; d.cache = {};
+  return d;
+})();
+
+const cap = s => s.replace(/^\w/, c => c.toUpperCase());
+const tname = (d, t) => { const s = d.look[t]; return !s || s === 'x' || s === '*' ? `Tile ${t}` : cap(s.replace(/^(a|an|some) /, '')); };
+const toBlobURL = c => new Promise(r => c.toBlob(b => r(URL.createObjectURL(b))));
+async function gridImages(d, key, bytes, w, h, chunk) {
+  if (d.cache[key]) return d.cache[key];
+  const out = [];
+  for (let cy = 0; cy < h; cy += chunk) for (let cx = 0; cx < w; cx += chunk) {
+    const cw = Math.min(chunk, w - cx), ch = Math.min(chunk, h - cy), c = canvas(cw * 16, ch * 16), ctx = c.getContext('2d');
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) blit(ctx, d.tiles, 16, bytes[(cy + y) * w + cx + x], x, y);
+    out.push({src: await toBlobURL(c), at: [cx, cy, cw, ch]});
+  }
+  return d.cache[key] = out;
+}
+async function spritesImage(d, list, w, h) {
+  const c = canvas(w * 16, h * 16), ctx = c.getContext('2d');
+  for (const q of list) blit(ctx, d.tiles, 16, q.tile, q.x, q.y);
+  return toBlobURL(c);
+}
+function itemText(d, h) {
+  let s = ITEM[h.tile] || tname(d, h.tile + 0x100).toLowerCase();
+  if (EQUIP_ITEM.has(h.tile) && d.equip[h.value]) s += `: ${d.equip[h.value]}`;
+  else if (COUNT_ITEM.has(h.tile) && h.value < 0xFF) s += ` (${h.value})`;
+  return s;
+}
+const hiddenAt = (d, loc, floor) => d.hidden.map((h, i) => ({...h, i})).filter(h => h.loc === loc && h.floor === floor);
+const searchHTML = (d, list) => list.map(h => p(`<b>Search here: ${esc(itemText(d, h))}.</b> ${ENTRY_RULE[h.i] || 'Once.'}`)).join('');
+const signHTML = s => `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>`;
+
+// ---------- Britannia and the Underworld ----------
+
+async function renderBig(d, under) {
+  const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
+  const images = await gridImages(d, under ? 'under' : 'brit', bytes, W, W, 32);
+  const parts = {names: '', shrines: '', gates: '', signs: '', items: ''}, features = [];
+  const places = d.places.filter(pl => under ? pl.n > 32 && DUNGEON_TILE.has(bytes[pl.y * W + pl.x]) : true);
+  for (const pl of places) {
+    const col = pl.n > 32 ? '#ffb0a0' : '#f4efe0', small = pl.n >= 19 && pl.n <= 21;
+    parts.names += label(pl.x + (small ? .5 : 1.08), pl.y + (pl.n === 20 ? -.3 : pl.n === 19 || pl.n === 21 ? 1.7 : .78), pl.name, small ? .6 : .9, col, small ? 'middle' : 'start');
+    features.push({name: pl.name, x: pl.x, y: pl.y, detail: KIND(pl.n)});
+  }
+  const shrines = under ? [] : d.shrines.filter(s => s.x || s.y);
+  for (const s of shrines) { parts.shrines += label(s.x + 1.08, s.y + .78, `Shrine of ${s.virtue}`, .8, C.shrine, 'start'); features.push({name: `Shrine of ${s.virtue}`, x: s.x, y: s.y, detail: 'shrine'}); }
+  const gates = d.moonstones.map((m, i) => ({...m, i})).filter(m => m.buried && m.under === under);
+  for (const m of gates) { parts.gates += ring(m.x, m.y, C.gate, '', .14); features.push({name: `Moongate (phase ${m.i})`, x: m.x, y: m.y}); }
+  const signs = d.signs.filter(s => s.loc === 0 && s.floor === floor);
+  for (const s of signs) { parts.signs += ring(s.x, s.y, C.sign, '.12 .08', .1); features.push({name: s.text.replace(/\n/g, ' '), x: s.x, y: s.y, detail: 'sign'}); }
+  const hidden = hiddenAt(d, 0, floor);
+  for (const h of hidden) { parts.items += ring(h.x, h.y, C.item, '.16 .1', .12); features.push({name: cap(itemText(d, h)), x: h.x, y: h.y, detail: 'search'}); }
+  const svg = svgDoc(W, W, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(W, W)));
+  const cell = (x, y) => {
+    const t = bytes[y * W + x], links = [];
+    let body = '';
+    const pl = places.find(q => q.x === x && q.y === y), sh = shrines.find(s => s.x === x && s.y === y), gate = gates.find(m => m.x === x && m.y === y);
+    for (const s of signs) if (s.x === x && s.y === y) body += signHTML(s);
+    body += searchHTML(d, hidden.filter(h => h.x === x && h.y === y));
+    if (gate) body += p(`<b>Moongate.</b> A moonstone (phase ${gate.i}) is buried here when the game starts; at night a gate stands on it and sends you to the stone of the moons’ phase. Dig a stone up and bury it elsewhere to move the gate.`);
+    if (sh) body += p(`Mantra: <b>${esc(sh.mantra.toUpperCase())}</b>. Meditate here on a quest for ${esc(sh.virtue)}; the Shadowlords may have taken the shrine.`);
+    if (pl && pl.n <= 32) {
+      links.push({label: `Enter ${pl.name}`, map: `P${pl.n}.0`, focus: [15, 30]});
+    }
+    if (pl && pl.n > 32) links.push(under ? {label: `Klimb up into ${pl.name}, level 8`, map: `D${pl.n - 33}-8`, focus: [x & 7, y & 7]} : {label: `Enter ${pl.name}, level 1`, map: `D${pl.n - 33}-1`, focus: [x & 7, y & 7]});
+    if (pl && pl.n > 32) body += p(under ? `${pl.name}’s bottom level opens here.` : `The dungeon’s top level. Its bottom level leads down into the Underworld at this same square.`);
+    if (pl && pl.n > 32) links.push(under ? {label: 'The same square in Britannia', map: 'brit', focus: [x, y]} : {label: 'The same square in the Underworld', map: 'under', focus: [x, y]});
+    return {title: pl ? pl.name : sh ? `Shrine of ${sh.virtue}` : tname(d, t), body, links};
+  };
+  const info = under
+    ? `<h3>The Underworld</h3><p>256 × 256 squares beneath Britannia. Each dungeon’s bottom level opens onto it at the square of the dungeon’s entrance above, so the dungeons are the ways between the two lands.</p>`
+    : `<h3>Britannia</h3><p>256 × 256 squares. The eight moonstones start buried at the moongates; at night a gate stands wherever a stone lies buried.</p>
+       <p class="muted">Dotted green rings mark squares where Search finds something; dotted white ones are signposts.</p>`;
+  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, images, svg, cell, features, info,
+    layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
+      ...(under ? [] : [{id: 'shrines', name: 'Shrines', swatch: swatch(label(.5, .8, 'S', .9, C.shrine))}, {id: 'gates', name: 'Moongates (at the start)', swatch: swatch(ring(0, 0, C.gate, '', .14))}]),
+      {id: 'signs', name: 'Signposts', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))},
+      {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
+      {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}]};
+}
+
+// ---------- settlements ----------
+
+// The schedule in force at an hour: at hours[0] they go to place 0, at hours[1] to 1, at hours[2] to 2, at hours[3] back to 1.
+const SLOT = [0, 1, 2, 1];
+function slotAt(q, hour) {
+  if (q.hours.every(h => !h)) return 0;
+  let best = -1, bestAgo = 99;
+  q.hours.forEach((h, i) => { const ago = (hour - h + 24) % 24; if (ago < bestAgo) { bestAgo = ago; best = i; } });
+  return SLOT[best];
+}
+const hh = h => `${String(h).padStart(2, '0')}:00`;
+
+function talkHTML(sc) {
+  const fmt = s => esc(s)
+    .replace(/\{avatar\}/g, '<i>(your name)</i>').replace(/\{gold (\d+)\}/g, '<span class="tag">takes $1 gold</span> ')
+    .replace(/\{give (\d+)\}/g, '<span class="tag">gives something</span> ').replace(/\{karma\+\}/g, '<span class="tag">karma +1</span> ').replace(/\{karma-\}/g, '<span class="tag">karma −1</span> ')
+    .replace(/\{guards\}/g, '<span class="tag">calls the guards</span> ').replace(/\{join\}/g, '<span class="tag">joins you</span> ').replace(/\{askname\}/g, '<span class="tag">asks your name</span> ')
+    .replace(/\{ifknown\}\{label (\d+)\}/g, (m, n) => `<span class="tag">if they know your name: Q${+n + 1}</span> `).replace(/\{label (\d+)\}/g, (m, n) => `<span class="tag">→ Q${+n + 1}</span> `)
+    .replace(/\{end\}/g, '<span class="tag">ends the talk</span>').replace(/\{rune\}/g, '<span class="tag">in runes</span> ')
+    .replace(/\{[a-z+\- 0-9]+\}/g, ' ').replace(/\s+/g, ' ').trim();
+  const row = (k, v) => v ? `<tr><th>${esc(k)}</th><td>${fmt(v)}</td></tr>` : '';
+  let h = `<table>${row('Look', sc.look)}${row('Hello', sc.greeting)}${row('Job', sc.job)}${row('Bye', sc.bye)}${sc.qa.map(q => row(q.k.join(', '), q.a)).join('')}</table>`;
+  for (const l of sc.labels) {
+    h += `<p><b>Q${l.n + 1}:</b> <i>${fmt(l.ask)}</i></p><table>${l.qa.map(q => row(q.k.join(', '), q.a)).join('')}${l.text.map(t => row('otherwise', t)).join('')}</table>`;
+  }
+  return h + '<p class="muted">Keywords match on their first four letters.</p>';
+}
+
+async function renderTown(d, n, z, hour) {
+  const t = d.towns[n], pl = d.places[n - 1], bytes = t.bytes[z], floors = Object.keys(t.bytes).map(Number).sort((a, b) => a - b);
+  const at = (x, y) => bytes[y * 32 + x];
+  const here = t.people.map(q => { const s = slotAt(q, hour); return {...q, slot: s, px: q.x[s], py: q.y[s], pz: q.z[s]}; }).filter(q => q.pz === z);
+  const images = [...await gridImages(d, `P${n}.${z}`, bytes, 32, 32, 32)];
+  images.push({src: await spritesImage(d, here.map(q => ({tile: q.type + 0x100, x: q.px, y: q.py})), 32, 32), layer: 'people'});
+  const scripts = d.talk[t.file];
+  const shopOf = q => { if (q.talk < 0x81 || q.talk > 0x88) return null; const k = q.talk - 0x81, i = d.shops.maps[k].indexOf(n); return {kind: SHOP_KIND[k], name: i >= 0 ? d.shops.names[k][i] : SHOP_KIND[k], keeper: i >= 0 ? d.shops.keepers[k][i] : ''}; };
+  const parts = {talkers: '', shops: '', stairs: '', signs: '', items: ''}, features = [];
+  for (const q of here) {
+    const s = shopOf(q), sc = scripts[q.talk];
+    if (s) { parts.shops += ring(q.px, q.py, C.shop); features.push({name: s.name, x: q.px, y: q.py, detail: s.kind}); }
+    else if (sc) { parts.talkers += ring(q.px, q.py, C.talk); features.push({name: sc.name, x: q.px, y: q.py, detail: `${sc.job} ${sc.qa.flatMap(r => r.k).join(' ')}`}); }
+    else features.push({name: tname(d, q.type + 0x100), x: q.px, y: q.py});
+  }
+  const signs = d.signs.filter(s => s.loc === n && s.floor === z), hidden = hiddenAt(d, n, z);
+  for (const s of signs) { parts.signs += ring(s.x, s.y, C.sign, '.12 .08', .1); features.push({name: s.text.replace(/\n/g, ' '), x: s.x, y: s.y, detail: 'sign'}); }
+  for (const h of hidden) { parts.items += ring(h.x, h.y, C.item, '.16 .1', .12); features.unshift({name: cap(itemText(d, h)), x: h.x, y: h.y, detail: 'search'}); }
+  const isStair = c => c >= 0xC4 && c <= 0xC7, isLadder = c => c === 0xC8 || c === 0xC9;
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (isStair(at(x, y)) || isLadder(at(x, y))) parts.stairs += ring(x, y, C.stair, '.2 .1', .08);
+  const svg = svgDoc(32, 32, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(32, 32)));
+  const fid = zz => `P${n}.${zz}`;
+
+  const cell = (x, y) => {
+    const c = at(x, y), links = [];
+    if (x === 0 || y === 0 || x === 31 || y === 31) links.push({label: 'Leave for Britannia', map: 'brit', focus: [pl.x, pl.y]});
+    if (c === 0xC8 && t.bytes[z + 1]) links.push({label: `Klimb up to the ${FLOOR(z + 1).toLowerCase()}`, map: fid(z + 1), focus: [x, y]});
+    if (c === 0xC9 && t.bytes[z - 1]) links.push({label: `Klimb down to the ${FLOOR(z - 1).toLowerCase()}`, map: fid(z - 1), focus: [x, y]});
+    if (isStair(c)) for (const zz of [z + 1, z - 1]) if (t.bytes[zz] && isStair(t.bytes[zz][y * 32 + x])) links.push({label: `Stairs to the ${FLOOR(zz).toLowerCase()}`, map: fid(zz), focus: [x, y]});
+    if (isStair(c) && !links.some(l => l.map && l.map !== 'brit')) for (const zz of [z + 1, z - 1]) if (t.bytes[zz]) links.push({label: `Stairs to the ${FLOOR(zz).toLowerCase()}?`, map: fid(zz), focus: [x, y]});
+    let body = signs.filter(s => s.x === x && s.y === y).map(signHTML).join('') + searchHTML(d, hidden.filter(h => h.x === x && h.y === y));
+    const q = here.find(r => r.px === x && r.py === y);
+    if (q) {
+      const s = shopOf(q), sc = scripts[q.talk];
+      const stops = (q.hours.some(Boolean) ? [0, 1, 2, 3] : [0]).map(i => ({i, sl: SLOT[i]}));
+      const schedHTML = `<p class="muted">${stops.map(({i, sl}) => `${q.hours.some(Boolean) ? `From ${hh(q.hours[i])}: ` : 'Always: '}${q.x[sl]}, ${q.y[sl]}${q.z[sl] !== z ? ` (${FLOOR(q.z[sl]).toLowerCase()})` : ''}, ${(AI[q.ai[sl]] || '').toLowerCase()}`).join('<br>')}</p>`;
+      for (const {i, sl} of stops) if (q.hours.some(Boolean) && (q.x[sl] !== x || q.y[sl] !== y || q.z[sl] !== z)) links.push({label: `At ${hh(q.hours[i])}`, map: fid(q.z[sl]), params: {hour: q.hours[i]}, focus: [q.x[sl], q.y[sl]]});
+      if (s) return {title: s.name, body: p(`${s.kind}${s.keeper ? `, kept by ${esc(s.keeper)}` : ''}.`) + schedHTML + body, links};
+      if (sc) return {title: sc.name.replace(/\{[^}]*\}/g, '') || tname(d, q.type + 0x100), body: `<p class="muted">${esc(tname(d, q.type + 0x100))}</p>` + talkHTML(sc) + schedHTML + body, links};
+      const role = q.talk === 0xFF ? p(n === 5 ? 'Asks half your gold “to charity” to let you pass.' : n === 18 ? 'Lets you pass for the password (wearing the Black Badge).' : 'Asks a tribute of 10 gold for each of your party to let you pass.') : '';
+      return {title: tname(d, q.type + 0x100), body: role + schedHTML + body, links};
+    }
+    return {title: tname(d, c), body, links};
+  };
+
+  const services = [...new Set(t.people.map(shopOf).filter(Boolean).map(s => `${s.name} (${s.kind.toLowerCase()})`))];
+  const named = t.people.map(q => scripts[q.talk]).filter(Boolean).map(sc => sc.name.replace(/\{[^}]*\}/g, ''));
+  const info = `<h3>${esc(pl.name)}${floors.length > 1 ? `, ${FLOOR(z).toLowerCase()}` : ''}</h3>
+    <p>People are shown where they stand at ${hh(hour)}; change the hour to follow their day. Click anyone to read their whole conversation and where they go.</p>
+    ${services.length ? `<p>Shops: ${services.map(esc).join(', ')}.</p>` : ''}
+    ${named.length ? `<p>People: ${[...new Set(named)].map(esc).join(', ')}.</p>` : ''}
+    <p class="muted">Dashed violet rings: stairs and ladders. Dotted green: search here. Dotted white: signs.</p>`;
+  return {
+    title: pl.name, subtitle: `${KIND(n).replace(/s$/, '')}${floors.length > 1 ? ` · ${FLOOR(z)}` : ''} · ${hh(hour)}`,
+    width: 32, height: 32, native: 16, images, svg, cell, features, info,
+    layers: [{id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, C.talk))},
+      {id: 'shops', name: 'Shopkeepers', swatch: swatch(ring(0, 0, C.shop))}, {id: 'stairs', name: 'Stairs and ladders', swatch: swatch(ring(0, 0, C.stair, '.2 .1', .08))},
+      {id: 'signs', name: 'Signs', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))}, {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
+      {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],
+  };
+}
+
+// ---------- dungeons ----------
+
+const glyph = {
+  wall: (x, y, col = C.wall) => rect(x, y, 1, 1, col) + rect(x, y, 1, .12, C.wallTop),
+  door: (x, y, col = C.door) => rect(x + .2, y + .2, .6, .6, 'none', `stroke="${col}" stroke-width=".1" rx=".05"`),
+  secret: (x, y) => rect(x + .2, y + .2, .6, .6, 'none', `stroke="${C.door}" stroke-width=".09" stroke-dasharray=".13 .1" rx=".05"`),
+  chest: (x, y, open) => rect(x + .22, y + .32, .56, .4, open ? 'none' : '#5a4410', `stroke="${C.chest}" stroke-width=".06" rx=".05"`) + path(`M${x + .22} ${y + .46}H${x + .78}M${x + .5} ${y + .46}V${y + .56}`, C.chest, .05),
+  ladder: (x, y, up, down) => path(`M${x + .32} ${y + .12}V${y + .88}M${x + .68} ${y + .12}V${y + .88}M${x + .32} ${y + .3}H${x + .68}M${x + .32} ${y + .5}H${x + .68}M${x + .32} ${y + .7}H${x + .68}`, C.ladder, .06) +
+    (up ? `<path d="M${x + .8} ${y + .08}l.15 .2h-.3z" fill="${C.ladder}"/>` : '') + (down ? `<path d="M${x + .8} ${y + .92}l.15 -.2h-.3z" fill="${C.ladder}"/>` : ''),
+  mark: (x, y, letter, color) => `<circle cx="${x + .5}" cy="${y + .5}" r=".32" fill="#1d1a24" stroke="${color}" stroke-width=".06"/><text x="${x + .5}" y="${y + .63}" text-anchor="middle" font-size=".36" font-family="Georgia, serif" font-weight="700" fill="${color}">${letter}</text>`,
+};
+const roomIndex = (k, r) => k === 1 ? -1 : (k === 0 ? 0 : k - 1) * 16 + r;   // EnterRoom: 16 rooms a dungeon in DUNGEON.CBT, Despise has none
+
+function describe(d, k, c) {
+  const hi = c & 0xF0, lo = c & 15, style = DUNGEON_STYLE[k];
+  const grapple = c < 0x80 && (c & 8) ? ' With a grapple you can klimb up from here.' : '';
+  switch (hi >> 4) {
+    case 0: return ['Passage', grapple];
+    case 1: return ['Ladder up', grapple];
+    case 2: return ['Ladder down', grapple];
+    case 3: return ['Ladder up and down', grapple];
+    case 4: return ['Chest', 'A wooden chest: treasure, and it may be trapped.'];
+    case 5: return ['Fountain', `Drink: it ${FOUNTAIN[Math.min(lo, 3)]}.`];
+    case 6: return lo === 1 || lo === 9 ? ['Hidden pit', 'Looks like a passage; you fall to the level below.' + grapple] : lo === 2 || lo === 10 ? ['Bomb trap', 'KABOOM: hurts the party, then is gone.'] : ['Pit', 'Klimb down it to the level below.' + grapple];
+    case 7: return ['Open chest', ''];
+    case 8: return [`${cap(FIELD[lo & 3])} field`, ['Puts the party to sleep.', 'Poisons.', 'Burns.', 'Shocks.'][lo & 3]];
+    case 9: return ['Nothing of note', ''];
+    case 10: case 15: return ['Heavy door', `Opens into room ${lo}: a fight on its own map.`];
+    case 11: return ['Wall', lo && WALL_TEXT[k][lo - 1] ? `Written on it: <b>${WALL_TEXT[k][lo - 1].toUpperCase()}</b>.` : ''];
+    case 12: return [style === 1 ? 'Dripping stalactite' : style === 2 ? 'Caved-in passage' : 'Remains of a less fortunate adventurer', 'Blocks the way.'];
+    case 13: return ['Secret door', 'Looks like a wall.'];
+    case 14: return ['Heavy door', ''];
+  }
+  return ['?', ''];
+}
+
+function renderLevel(d, k, L) {
+  const pl = d.places[32 + k], cells = d.dungeonBytes[k].subarray((L - 1) * 64, L * 64), at = (x, y) => cells[y * 8 + x];
+  const wallCol = ['#5a4a42', '#4b4e45', '#4b4e45', '#5a4a42', '#5a4a42', '#4a463c', '#4a463c', '#4b4e45'][k];
+  const parts = {base: '', doors: '', secret: '', chests: '', ladders: '', specials: '', rooms: ''}, features = [];
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const c = at(x, y), hi = c >> 4, [name] = describe(d, k, c);
+    parts.base += hi === 11 || hi === 13 || hi === 12 ? glyph.wall(x, y, wallCol) : rect(x, y, 1, 1, C.floor);
+    if (hi === 12) parts.specials += glyph.mark(x, y, '✕', '#9a9a9a');
+    if (hi === 11 && (c & 15)) { parts.specials += glyph.mark(x, y, '✎', C.sign); features.push({name: describe(d, k, c)[1].replace(/<[^>]+>/g, ''), x, y}); }
+    if (hi === 14) parts.doors += glyph.door(x, y);
+    if (hi === 13) { parts.secret += glyph.secret(x, y); features.push({name, x, y}); }
+    if (hi === 4 || hi === 7) { parts.chests += glyph.chest(x, y, hi === 7); features.push({name, x, y}); }
+    if (hi >= 1 && hi <= 3) { parts.ladders += glyph.ladder(x, y, hi & 1, hi & 2); features.unshift({name, x, y}); }
+    const sp = {5: ['F', C.event], 6: ['P', C.event], 8: ['≡', C.event]}[hi];
+    if (sp && !(hi === 6 && (c & 15) % 8 === 1)) { parts.specials += glyph.mark(x, y, sp[0], sp[1]); features.push({name, x, y}); }
+    if (hi === 6 && (c & 15) % 8 === 1) { parts.specials += glyph.mark(x, y, 'P', '#777'); features.push({name, x, y}); }
+    if (hi === 10 || hi === 15) { parts.rooms += glyph.door(x, y, C.room) + glyph.mark(x, y, String(c & 15), C.room); features.push({name: `Room ${c & 15}`, x, y}); }
+    if (c < 0x80 && (c & 8) && hi !== 6) parts.specials += `<path d="M${x + .12} ${y + .3}l.12 -.18l.12 .18" fill="none" stroke="${C.ladder}" stroke-width=".05"/>`;
+  }
+  const svg = svgDoc(8, 8, parts.base + Object.entries(parts).filter(([kk]) => kk !== 'base').map(([kk, v]) => g(kk, v)).join('') + g('grid', gridLines(8, 8)));
+  const id = l => `D${k}-${l}`;
+  const cell = (x, y) => {
+    const c = at(x, y), hi = c >> 4, [title, text] = describe(d, k, c), links = [];
+    const up = hi === 1 || hi === 3 || (c < 0x80 && (c & 8)), down = hi === 2 || hi === 3 || hi === 6;
+    if (up) links.push(L === 1 ? {label: 'Klimb out to Britannia', map: 'brit', focus: [pl.x, pl.y]} : {label: `Klimb to level ${L - 1}`, map: id(L - 1), focus: [x, y]});
+    if (down && !(hi === 6 && (c & 15) % 8 === 2)) links.push(L === 8 ? {label: 'Down into the Underworld', map: 'under', focus: [pl.x, pl.y]} : {label: `Down to level ${L + 1}`, map: id(L + 1), focus: [x, y]});
+    if ((hi === 10 || hi === 15) && roomIndex(k, c & 15) >= 0) links.push({label: `Open room ${c & 15}`, map: `D${k}-room-${c & 15}`});
+    return {title, body: text ? p(text) : '', links};
+  };
+  const info = `<h3>${esc(pl.name)}, level ${L}</h3>
+    <p>Fixed in the game file, the same for everyone. Klimbing up from level 1 leaves for Britannia; going down from level 8 leads into the Underworld, both at the dungeon’s square.</p>
+    <p class="muted">Each level is 8 × 8 and wraps at its edges. Pink doors open into rooms, fights on their own 11 × 11 maps. A small blue chevron: a grapple klimbs up from that square.</p>`;
+  return {
+    title: `${pl.name}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, svg, cell, features, info,
+    layers: [
+      {id: 'doors', name: 'Doors', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.door(0, 0))},
+      {id: 'secret', name: 'Secret doors', swatch: swatch(rect(0, 0, 1, 1, C.wall) + glyph.secret(0, 0))},
+      {id: 'chests', name: 'Chests', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.chest(0, 0))},
+      {id: 'ladders', name: 'Ladders', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.ladder(0, 0, true, false))},
+      {id: 'specials', name: 'Fountains, pits, fields, writing', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, 'F', C.event))},
+      {id: 'rooms', name: 'Rooms', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, '1', C.room))},
+      {id: 'grid', name: 'Grid', swatch: swatch(rect(0, 0, 1, 1, C.floor) + path('M.5 0V1M0 .5H1', '#888', .06))},
+    ],
+  };
+}
+
+async function renderRoom(d, k, r) {
+  const room = d.rooms[roomIndex(k, r)], pl = d.places[32 + k];
+  const images = [...await gridImages(d, `D${k}-room-${r}`, room.bytes, 11, 11, 11)];
+  images.push({src: await spritesImage(d, room.foes, 11, 11), layer: 'foes'});
+  let trig = '';
+  for (const t of room.triggers) trig += ring(t.at[0], t.at[1], C.event, '.16 .1');
+  const svg = svgDoc(11, 11, g('triggers', trig) + g('grid', gridLines(11, 11)));
+  const doors = [];
+  for (let L = 1; L <= 8; L++) { const cells = d.dungeonBytes[k].subarray((L - 1) * 64, L * 64); cells.forEach((c, i) => { if ((c >> 4 === 15 || c >> 4 === 10) && (c & 15) === r) doors.push({L, x: i & 7, y: i >> 3}); }); }
+  const cell = (x, y) => {
+    const foe = room.foes.find(f => f.x === x && f.y === y), t = room.triggers.find(q => q.at[0] === x && q.at[1] === y), c = room.bytes[y * 11 + x];
+    const body = t ? p(`<b>Trigger:</b> stepping here turns ${t.a.join(',')}${t.b.join(',') !== t.a.join(',') ? ` and ${t.b.join(',')}` : ''} into ${esc(tname(d, t.tile).toLowerCase())}.`) : '';
+    const links = doors.map(o => ({label: `Back to level ${o.L}`, map: `D${k}-${o.L}`, focus: [o.x, o.y]}));
+    if (c === 0xC8 || c === 0xC9) links.unshift({label: c === 0xC8 ? 'This ladder klimbs up a level' : 'This ladder goes down a level'});
+    return {title: foe ? tname(d, foe.tile) : tname(d, c), body, links: links.filter(l => l.map)};
+  };
+  const foes = room.foes.map(f => tname(d, f.tile)), count = foes.reduce((m, f) => (m[f] = (m[f] || 0) + 1, m), {});
+  const sides = Object.keys(room.starts);
+  return {
+    title: `${pl.name}, room ${r}`, subtitle: 'Dungeon room', width: 11, height: 11, native: 16, images, svg, cell,
+    features: room.foes.map(f => ({name: tname(d, f.tile), x: f.x, y: f.y})),
+    info: `<h3>${esc(pl.name)}, room ${r}</h3><p>In it: ${Object.entries(count).map(([kk, v]) => `${v} × ${esc(kk)}`).join(', ') || 'nothing'}.</p>
+      ${doors.length ? `<p>Its doors: ${doors.map(o => `<a href="#" data-go='${JSON.stringify({map: `D${k}-${o.L}`, focus: [o.x, o.y]})}'>level ${o.L} (${o.x}, ${o.y})</a>`).join(', ')}.</p>` : ''}
+      ${sides.length ? `<p>The party can enter from the ${sides.join(', ')}.</p>` : ''}
+      ${room.triggers.length ? '<p>Dotted squares are triggers that change the room when stepped on.</p>' : ''}`,
+    layers: [{id: 'foes', name: 'Foes and objects'}, {id: 'triggers', name: 'Triggers', swatch: swatch(ring(0, 0, C.event, '.16 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],
+  };
+}
+
+let meta = null;
+export default {
+  id: 'u5', title: 'Ultima V', version: 'PC/GOG version. Every map is read from the game files.',
+  params: [{key: 'hour', label: 'Hour of the day (towns)', def: 12, min: 0, max: 23,
+    help: 'Townsfolk keep a daily schedule of up to three places. 0 is midnight.'}],
+  transient: [], defaultMap: 'brit',
+  maps(params, mapId) {
+    const list = [{id: 'brit', name: 'Britannia'}, {id: 'under', name: 'The Underworld'}];
+    if (!meta) return list;
+    let m;
+    if ((m = /^P(\d+)\.(-?\d)$/.exec(mapId || '')) && meta.towns[m[1]]) {
+      const n = +m[1];
+      for (const z of Object.keys(meta.towns[n].bytes).map(Number).sort((a, b) => a - b)) list.push({id: `P${n}.${z}`, name: FLOOR(z), group: `${meta.places[n - 1].name}: floors`});
+    }
+    if ((m = /^D(\d)-/.exec(mapId || ''))) {
+      const k = +m[1], name = meta.places[32 + k].name;
+      for (let l = 1; l <= 8; l++) list.push({id: `D${k}-${l}`, name: String(l), title: `Level ${l}`, group: `${name}: levels`});
+      if (k !== 1) for (let r = 0; r < 16; r++) list.push({id: `D${k}-room-${r}`, name: String(r), title: `Room ${r}`, group: `${name}: rooms`});
+    }
+    for (const pl of meta.places) list.push(pl.n <= 32 ? {id: `P${pl.n}.0`, name: pl.name, group: KIND(pl.n)} : {id: `D${pl.n - 33}-1`, name: pl.name, group: 'Dungeons'});
+    return list;
+  },
+  async render(mapId, params) {
+    const d = await load();
+    meta = d;
+    const hour = Math.max(0, Math.min(23, params.hour ?? 12));
+    let m;
+    if ((m = /^D(\d)-room-(\d+)$/.exec(mapId || '')) && +m[1] < 8 && +m[1] !== 1 && +m[2] < 16) return renderRoom(d, +m[1], +m[2]);
+    if ((m = /^D(\d)-([1-8])$/.exec(mapId || '')) && +m[1] < 8) return renderLevel(d, +m[1], +m[2]);
+    if ((m = /^P(\d+)\.(-?\d)$/.exec(mapId || '')) && d.towns[m[1]] && d.towns[m[1]].bytes[m[2]]) return renderTown(d, +m[1], +m[2], hour);
+    if (mapId === 'under') return renderBig(d, true);
+    return renderBig(d, false);
+  },
+};

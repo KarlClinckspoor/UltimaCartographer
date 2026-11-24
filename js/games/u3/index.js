@@ -254,7 +254,7 @@ function renderLevel(d, key, L) {
     <p>${chests} chest${chests === 1 ? '' : 's'}. Encounters: ${((L + 1) / 256 * 100).toFixed(1)}% a turn on a floor square, from ${kinds.join(', ')}; the party’s square becomes a chest before the fight.</p>
     <p class="muted">Fixed in the game file, the same for everyone. Every level wraps at its edges. Light is only for the view: you can move and fight in the dark.</p>`;
   return {
-    title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, svg, cell, features, info,
+    title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, wrap: true, svg, cell, features, info,
     layers: [
       {id: 'doors', name: 'Doors', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.door(0, 0))},
       {id: 'secret', name: 'Secret doors', swatch: swatch(rect(0, 0, 1, 1, C.wall) + glyph.secret(0, 0))},

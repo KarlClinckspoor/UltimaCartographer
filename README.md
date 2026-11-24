@@ -9,9 +9,11 @@ Plan and decisions: `The Ultima Cartographer research and plan.md`.
 
 Any static file server from this folder, for example:
 
-    python -m http.server 8137
+    python tools/serve.py 8137
 
-then open http://127.0.0.1:8137/. (Opening `index.html` as a file doesn't work: browsers
+then open http://127.0.0.1:8137/. (`python -m http.server` works too, but on Windows it refuses
+connections when the browser asks for many files at once; `tools/serve.py` is the same server
+with a longer queue.) (Opening `index.html` as a file doesn't work: browsers
 block ES modules over `file://`.)
 
 ## Layout
@@ -30,7 +32,10 @@ block ES modules over `file://`.)
 | `data/u2/` | Ultima II data extracted by `tools/extract-u2.mjs` |
 | `js/games/u3/index.js` | Ultima III's maps: Sosaria, Ambrosia, 12 townes and castles, 7 dungeons × 8 levels |
 | `js/games/u4/index.js` | Ultima IV's maps: Britannia, 16 castles, townes and villages (and LB's upper floor), 8 dungeons × 8 levels and their rooms |
-| `data/u3/`, `data/u4/` | Extracted by `tools/extract-u3.mjs` and `tools/extract-u4.mjs` |
+| `js/games/u5/index.js` | Ultima V's maps: Britannia, the Underworld, 32 settlements floor by floor, 8 dungeons × 8 levels and their rooms |
+| `js/games/u6/engine.js` | The Ultima VI engine's maps (Ultima VI, The Savage Empire, Martian Dreams): drawn in the browser a grid tile at a time from the game's chunk map, objects and people |
+| `js/games/u6/`, `js/games/se/`, `js/games/md/` | Each game's tables for the engine (level names, entrances, readable objects) |
+| `data/u3/`, `data/u4/`, `data/u5/` | Extracted by `tools/extract-u3.mjs`, `tools/extract-u4.mjs` and `tools/extract-u5.mjs` |
 | `js/lib/draw.js` | Drawing helpers shared by game modules (U2 onwards) |
 | `tools/png.mjs` | The PNG writer the newer extractors share |
 | `tools/` | Extractors and checks that need the game files or DOSBox |
@@ -52,12 +57,18 @@ only if the extractor changes:
 
     node tools/extract-u3.mjs "C:/GOG Games/Ultima 3"
     node tools/extract-u4.mjs "C:/GOG Games/Ultima 4" ../u4-decompiled-port
+    node tools/extract-u5.mjs "C:/GOG Games/Ultima 5"
+    node tools/extract-u6.mjs u6 "C:/GOG Games/Ultima 6" ../u6-decompiled/dialogue.json
+    node tools/extract-u6.mjs se "C:/GOG Games/The Savage Empire/SAVAGE" ../u6se-decompiled/dialogue.json
+    node tools/extract-u6.mjs md "C:/GOG Games/Martian Dreams/MARTIAN" ../u6md-decompiled/dialogue.json
 
 Ultima IV reads its game data from the GOG folder and the tables the game keeps in code (tile
 names, place names and squares, moongates, mantras, shop names and counter rows) from the port's C
 source. Ultima II needs the installed GOG folder: u2-decompiled's `gamedata` copy lacks most planet maps
 (they ship with lower-case names). Its tile bitmaps come from `u2-decompiled/src/U2DATA.ASM` and
-are checked byte for byte against `ULTIMAII.EXE`.
+are checked byte for byte against `ULTIMAII.EXE`. Ultima V needs only the game folder: the tables it
+keeps in code (place names and squares, shops, hidden items, shrines) are read from `DATA.OVL`, at the
+offsets u5d's `ultima.c` gives them.
 
 ## Tests
 
@@ -66,6 +77,8 @@ are checked byte for byte against `ULTIMAII.EXE`.
     node tests/u2-data.test.mjs
     node tests/u3-data.test.mjs
     node tests/u4-data.test.mjs
+    node tests/u5-data.test.mjs
+    node tests/u6-data.test.mjs
 
 The first compares the Akalabeth generators with `akmap.py` (12 lucky numbers: world, stats,
 levels 1–15 from three arrival squares); it needs Python and a `u0-decompiled` checkout (default
@@ -75,7 +88,11 @@ u1-decompiled's DOSBox harness. The third checks the Ultima II extraction agains
 u2-decompiled's MECHANICS.md states (which maps exist, tri-lithium chest counts, the shared Earth
 maze, Pluto's dungeon, talk strings). The U3 and U4 tests do the same against their
 decompilations' docs: U3's dungeon cell counts, rods, time vision and locked doors; U4's moongates,
-each place standing on a tile of its kind, altars, rooms, talk records and mantras.
+each place standing on a tile of its kind, altars, rooms, talk records and mantras; U5's places and
+shrines on their tiles, dungeons opening into the Underworld, floors per file, shops, signs and that
+every townsperson's dialog number has a script. The U6 test covers all three engine games: file
+layouts, map bounds, schedules, Lord British's day, the moonstones, and that every way down from
+Britannia leads to a ladder whose way back returns to the same square.
 
 ## Akalabeth notes
 
@@ -116,6 +133,35 @@ each place standing on a tile of its kind, altars, rooms, talk records and mantr
   keeper (from the counter-row table the game uses). Squares where Search finds an item are ringed.
 - Dungeon rooms open as their own maps, with foes and triggers. The Shrine of Spirituality has no
   square: in the game's table it shares Humility's, and Enter finds Humility.
+
+## Ultima V notes
+
+- PC/GOG version, EGA tiles. Britannia and the Underworld are drawn as 64 images of 32 × 32 squares.
+- Townsfolk keep schedules: the hour box (0–23) puts them where they are at that hour, on the floor
+  they are on. Each popup has their whole conversation (keywords, follow-up questions and what
+  they lead to), where they go during the day, and buttons to follow them.
+- Shopkeepers show their shop and keeper from the game's own table (`shopMapIds`); signs show their
+  text; squares where Search finds something are ringed, with any condition (keys, once a day).
+- Dungeons: klimbing up from level 1 leads to Britannia and down from level 8 to the Underworld, at
+  the dungeon's square. Hidden pit traps (0x61) look like passages in the game; here they show as grey pits.
+  Rooms open as their own maps, with foes, triggers and the doors that lead into them.
+- The moongates shown are where the moonstones lie buried when a game starts.
+
+## Ultima VI, The Savage Empire and Martian Dreams notes
+
+- PC/GOG versions. One module draws all three: the 1024 × 1024 surface and five 256 × 256 levels
+  are drawn in the browser as you pan, from the game's chunk map (12-bit chunk indexes, 8 × 8-tile
+  chunks) and its object blocks, so the data stays small (about 1 MB a game). Far out, each square
+  is drawn as its tile's average colour.
+- Objects are as a new game starts, multi-tile ones included; eggs (creature spawners) are not
+  drawn but are listed with what they hold. Containers list their contents; signs and books show
+  their text (rune digraphs expanded); ladders, holes and entrances link to where they lead (U6 by
+  the game's coordinate rule, the other two by their entrance tables).
+- People stand where their schedule puts them at the chosen hour; their popup has their day, what
+  they carry and their conversation, condensed from each decompilation's `dialogue.json`
+  (keywords and answers; "depends" marks answers that change with the story).
+- Ultima VI labels the dungeon and shrine entrances with the names Shamino gives them.
+- Dungeon maps that wrap show arrows at their edges.
 
 ## Credits
 

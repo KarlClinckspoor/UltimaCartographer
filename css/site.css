@@ -94,6 +94,15 @@ main { flex: 1; position: relative; min-width: 0; }
 .leaflet-popup-content p { margin: 4px 0; }
 .leaflet-popup-content .xy { color: var(--muted); font-size: 12px; }
 .leaflet-popup-content .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pixels-crisp .pixel-tile canvas { image-rendering: pixelated; }
+.sign { font-family: Georgia, serif; letter-spacing: .08em; text-align: center; background: #2a2418; border: 1px solid #5a4a2a; border-radius: 4px; padding: 4px 8px; }
+.tag { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 8px; background: var(--panel-2); color: var(--accent); white-space: nowrap; }
+.leaflet-popup-content table { border-collapse: collapse; font-size: 13px; }
+.leaflet-popup-content th { color: var(--muted); text-align: left; vertical-align: top; padding: 2px 8px 2px 0; font-weight: 600; width: 26%; overflow-wrap: anywhere; }
+.leaflet-popup-content { overflow-wrap: anywhere; }
+.leaflet-popup-content table { width: 100%; table-layout: fixed; }
+.leaflet-popup-content ul { margin: 4px 0; padding-left: 18px; }
+.leaflet-popup-content td { padding: 2px 0; }
 .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
 .coord-readout { background: rgba(18,19,16,.85); color: var(--muted); padding: 3px 8px; border-radius: 5px; border: 1px solid var(--line); font-variant-numeric: tabular-nums; font-size: 12px; }
 

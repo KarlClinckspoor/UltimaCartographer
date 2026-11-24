@@ -4,6 +4,10 @@ import u1 from './u1/index.js';
 import u2 from './u2/index.js';
 import u3 from './u3/index.js';
 import u4 from './u4/index.js';
+import u5 from './u5/index.js';
+import u6 from './u6/index.js';
+import se from './se/index.js';
+import md from './md/index.js';
 
 export const GAMES = [
   u0,
@@ -11,8 +15,10 @@ export const GAMES = [
   u2,
   u3,
   u4,
-  {id: 'u5', title: 'Ultima V'},
-  {id: 'u6', title: 'Ultima VI'},
+  u5,
+  u6,
+  se,
+  md,
   {id: 'u7si', title: 'Ultima VII: Serpent Isle'},
   {id: 'u8', title: 'Ultima VIII'},
 ];

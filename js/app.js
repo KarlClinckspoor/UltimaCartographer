@@ -21,6 +21,11 @@
 //     features: [{name, x, y, detail?}], what search finds
 //     cell(x, y) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}]} | null
 //     info,                             html for the side panel
+//     draw(canvas, x0, y0, span, off),  for maps too big for images: draws squares x0..x0+span,
+//                                       y0..y0+span into a 256-pixel canvas (may return a Promise);
+//                                       off = Set of layer ids switched off; called again when it changes
+//     wrap,                             true when walking off an edge comes back at the opposite one:
+//                                       arrows outside the map say so
 //   }
 //
 // URL: #<game>/<map>?<params>&view=<x>,<y>,<zoom>
@@ -35,6 +40,8 @@ const hidden = {};            // game id -> Set of layer ids switched off
 const seenLayers = {};        // game id -> Set of layer ids already given their default
 let view = null;              // what render() returned for the current map
 let overlay = null;
+let wrapOverlay = null;
+let drawLayer = null, drawnOff = '';
 let images = [];              // [{overlay, layer}]
 let showing = 0;
 let fileNote = null;
@@ -44,6 +51,26 @@ const map = L.map('map', {
   crs: L.CRS.Simple, minZoom: 1, maxZoom: 8, zoomSnap: 0.25, zoomDelta: 0.5,
   wheelPxPerZoomLevel: 90, attributionControl: false, keyboard: true,
 });
+// Wrapping maps: an arrow beside every row and column pointing off the edge, and a note on each side
+// saying where you come back. The arrows sit in a margin of WRAP squares around the map.
+// Size of the margin, in squares: 1.5 for a small dungeon, more on big maps so the notes stay readable.
+const wrapUnit = v => Math.max(1, Math.min(v.width, v.height) / 24);
+const wrapBounds = v => { const m = 1.5 * wrapUnit(v); return L.latLngBounds(toLatLng(-m, v.height + m), toLatLng(v.width + m, -m)); };
+function wrapSvg(w, h) {
+  const u = wrapUnit({width: w, height: h}), m = 1.5 * u, c = '#e0b354', fs = .3 * u;
+  const arrow = (x, y, rot) => `<path d="M-.16 -.2L.14 0L-.16 .2" transform="translate(${x} ${y}) rotate(${rot}) scale(${u})" fill="none" stroke="${c}" stroke-width=".07" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>`;
+  const text = (x, y, rot, t) => `<text transform="translate(${x} ${y}) rotate(${rot})" text-anchor="middle" font-size="${fs}" font-family="system-ui, sans-serif" fill="${c}" opacity=".9">${t}</text>`;
+  // an arrow by every row and column on a small map, about 16 a side on a big one
+  const stepX = Math.max(1, Math.round(w / 16)), stepY = Math.max(1, Math.round(h / 16));
+  let b = '';
+  for (let y = stepY / 2; y < h; y += stepY) b += arrow(w + .35 * u, y, 0) + arrow(-.35 * u, y, 180);
+  for (let x = stepX / 2; x < w; x += stepX) b += arrow(x, h + .35 * u, 90) + arrow(x, -.35 * u, 270);
+  b += text(w + .95 * u, h / 2, 90, 'off this edge: back in at the left') + text(-.85 * u, h / 2, -90, 'off this edge: back in at the right');
+  b += text(w / 2, -.75 * u, 0, 'off this edge: back in at the bottom') + text(w / 2, h + 1.0 * u, 0, 'off this edge: back in at the top');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${w + 2 * m} ${h + 2 * m}">${b}</svg>`;
+  return new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+}
+
 const toLatLng = (x, y) => L.latLng(-y, x);
 const cellBounds = (x, y) => L.latLngBounds(toLatLng(x, y + 1), toLatLng(x + 1, y));
 const hoverRect = L.rectangle([[0, 0], [0, 0]], {color: '#e4e1d6', weight: 1, opacity: .6, fill: false, interactive: false});
@@ -128,6 +155,8 @@ async function show({focus, initialView, keepView} = {}) {
   view.mapId = mapId;
 
   if (overlay) overlay.remove();
+  if (wrapOverlay) { wrapOverlay.remove(); wrapOverlay = null; }
+  if (drawLayer) { drawLayer.remove(); drawLayer = null; }
   for (const i of images) i.overlay.remove();
   const bounds = L.latLngBounds(toLatLng(0, view.height), toLatLng(view.width, 0));
   images = (view.images || []).map(i => ({
@@ -136,20 +165,35 @@ async function show({focus, initialView, keepView} = {}) {
       i.at ? L.latLngBounds(toLatLng(i.at[0], i.at[1] + i.at[3]), toLatLng(i.at[0] + i.at[2], i.at[1])) : bounds,
       {interactive: false, className: 'pixel-image'}).addTo(map),
   }));
+  if (view.draw) {
+    const v = view;
+    drawnOff = [...(hidden[game.id] || [])].sort().join();
+    const Layer = L.GridLayer.extend({
+      createTile(c, done) {
+        const cv = document.createElement('canvas'), span = 256 / 2 ** c.z;
+        cv.width = cv.height = 256;
+        Promise.resolve().then(() => v.draw(cv, c.x * span, c.y * span, span, hidden[game.id] || new Set())).then(() => done(null, cv), e => { console.error(e); done(e, cv); });
+        return cv;
+      },
+    });
+    drawLayer = new Layer({tileSize: 256, bounds, noWrap: true, maxNativeZoom: Math.log2(view.native || 16), className: 'pixel-tile', keepBuffer: 1}).addTo(map);
+  }
   // Pixel art: crisp when drawn at its own size or bigger, smoothed when shrunk.
   const first = view.images?.[0]?.src;
   nativeZoom = view.native ? Math.log2(view.native) : first instanceof HTMLCanvasElement ? Math.log2(first.width / view.width) : null;
   pixelMode();
   const svg = new DOMParser().parseFromString(view.svg || `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${view.width} ${view.height}"/>`, 'image/svg+xml').documentElement;
   overlay = L.svgOverlay(svg, bounds, {interactive: false}).addTo(map);
-  map.setMaxBounds(bounds.pad(0.5));
+  const shown = view.wrap ? wrapBounds(view) : bounds;
+  if (view.wrap) wrapOverlay = L.svgOverlay(wrapSvg(view.width, view.height), shown, {interactive: false, className: 'wrap-arrows'}).addTo(map);
+  map.setMaxBounds(shown.pad(0.5));
   hoverRect.remove(); selRect.remove();
 
-  const fitZoom = map.getBoundsZoom(bounds, false, L.point(40, 40));
+  const fitZoom = map.getBoundsZoom(shown, false, L.point(40, 40));
   map.setMinZoom(Math.min(fitZoom - 1, 3));
   if (initialView) map.setView(toLatLng(initialView.x, initialView.y), initialView.z, {animate: false});
   else if (before) map.setView(toLatLng(before.x, before.y), before.z, {animate: false});
-  else map.fitBounds(bounds, {padding: [40, 40], animate: false});
+  else map.fitBounds(shown, {padding: [40, 40], animate: false});
 
   $('#map-title').innerHTML = `${esc(view.title)}${view.subtitle ? `<small>${esc(view.subtitle)}</small>` : ''}`;
   document.title = `${view.title} · ${game.title} · Ultima Cartographer`;
@@ -239,6 +283,8 @@ function applyLayers() {
   for (const el of overlay.getElement().querySelectorAll('[data-layer]'))
     el.style.display = off.has(el.dataset.layer) ? 'none' : '';
   for (const i of images) if (i.layer) i.overlay.getElement().style.display = off.has(i.layer) ? 'none' : '';
+  const key = [...off].sort().join();
+  if (drawLayer && key !== drawnOff) { drawnOff = key; drawLayer.redraw(); }
 }
 
 function search() {
@@ -269,7 +315,7 @@ function openCell(x, y, pan) {
   const links = c.links || [];
   const html = `<h4>${esc(c.title)}</h4>${c.body || ''}<p class="xy">x ${x}, y ${y}</p>` +
     (links.length ? `<div class="links">${links.map((l, i) => `<button class="btn" data-link="${i}">${esc(l.label)}</button>`).join('')}</div>` : '');
-  const popup = L.popup({maxWidth: 320, autoPanPadding: [30, 30]}).setLatLng(toLatLng(x + .5, y + .1)).setContent(html).openOn(map);
+  const popup = L.popup({maxWidth: 340, maxHeight: 440, autoPanPadding: [30, 30]}).setLatLng(toLatLng(x + .5, y + .1)).setContent(html).openOn(map);
   for (const b of popup.getElement().querySelectorAll('[data-link]')) b.onclick = () => {
     const l = links[b.dataset.link];
     go({mapId: l.map || state.mapId, params: l.params, focus: l.focus});
@@ -290,7 +336,7 @@ map.on('zoomend', pixelMode);
 
 $('#side-toggle').onclick = () => {
   $('#side').classList.toggle('collapsed');
-  requestAnimationFrame(() => { map.invalidateSize(); if (overlay) map.fitBounds(overlay.getBounds(), {padding: [40, 40]}); });
+  requestAnimationFrame(() => { map.invalidateSize(); if (overlay) map.fitBounds((wrapOverlay || overlay).getBounds(), {padding: [40, 40]}); });
 };
 
 window.addEventListener('popstate', () => {

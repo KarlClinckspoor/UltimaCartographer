@@ -269,7 +269,7 @@ async function renderLevel(d, key, L) {
     ${STONES[di] ? `<p>Altar stone: ${STONES[di]}.</p>` : ''}
     <p class="muted">Each level is 8 × 8 and wraps at its edges.</p>`;
   return {
-    title: `${pl.name.replace(/!$/, '')}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, svg, cell, features, info,
+    title: `${pl.name.replace(/!$/, '')}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, svg, cell, features, info,
     layers: [
       {id: 'doors', name: 'Doors', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.door(0, 0))},
       {id: 'secret', name: 'Secret doors', swatch: swatch(rect(0, 0, 1, 1, C.wall) + glyph.secret(0, 0))},

@@ -1,0 +1,28 @@
+// The Savage Empire (Worlds of Ultima): the Valley of Eodon and the levels beneath it, drawn by the
+// shared Ultima VI engine module. Tables from u6se-decompiled SRC (map.c, egg.c).
+import {makeEngine} from '../u6/engine.js';
+
+// map.c: where an entrance leads, by its type and quality (C_08CB_0855).
+const T14 = [[0x161, 0x279], [0x08B, 0x00B], [0x0DA, 0x01B], [0x013, 0x053], [0x00B, 0x0CB], [0x062, 0x053], [0x0EB, 0x054], [0x0E3, 0x0B3], [0x0F3, 0x0CC], [0x033, 0x0F3], [0x123, 0x045], [0x110, 0x045], [0x1F1, 0x04D]];
+const T16 = [[0x18C, 0x044], [0x258, 0x0DF], [0x08A, 0x1C9], [0x08B, 0x1FD], [0x170, 0x150], [0x279, 0x1D0], [0x29A, 0x2B1], [0x0EA, 0x03D]];
+const TE3 = [[0x389, 0x2ED], [0x335, 0x15D], [0x3DA, 0x19D], [0x08C, 0x24E], [0x07C, 0x256], [0x06C, 0x25E], [0x34D, 0x28E], [0x36D, 0x28E], [0x35D, 0x296], [0x37D, 0x296], [0x2AD, 0x176], [0x2C5, 0x18D], [0x2D5, 0x19E], [0x2DD, 0x19E], [0x2BD, 0x156], [0x3BC, 0x0EC], [0x3A1, 0x34D]];
+const TA3 = [[0x02D, 0x082], [0x019, 0x083], [0x051, 0x093], [0x0D1, 0x05B], [0x095, 0x0EC], [0x04A, 0x0C3], [0x0F4, 0x0AC], [0x0E4, 0x0B4], [0x0D4, 0x0BC], [0x08D, 0x03C], [0x0AD, 0x03C], [0x09D, 0x044], [0x0BD, 0x044], [0x00D, 0x0F4], [0x0B5, 0x0E4], [0x0C5, 0x0F4], [0x0CD, 0x0F4], [0x0ED, 0x0F4], [0x014, 0x0DA], [0x0B1, 0x083]];
+const at = (t, i, z) => t[i] ? [t[i][0], t[i][1], z] : null;
+
+export default makeEngine({
+  id: 'se', title: 'The Savage Empire', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
+  startHour: 12,
+  levels: ['The Valley of Eodon', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],
+  redGates: [],
+  objLadder: -1, objRedGate: -1, objEgg: 0xE6,
+  entranceTypes: [0x14, 0xA3, 0x16, 0xE3, 0x103, 0xA0],
+  entrance: r => r.type === 0x14 ? at(T14, r.qual, 1) : r.type === 0xA3 ? at(TA3, r.qual - 101, 2) : r.type === 0x16 ? at(T16, r.qual - 1, r.qual === 8 ? 2 : 0)
+    : r.type === 0xE3 ? at(TE3, r.qual - 104, 0) : r.type === 0x103 ? [0xC0, 0x1CC, 0] : r.type === 0xA0 ? [0x9D, 0x89, 3] : null,
+  // The Savage Empire has no signs or books (no BOOK.DAT, no read command); its only written texts are
+  // two messages in objcmd.c: CmdLook on the headless statue (0xf7, quality 0) and ReadJimmysNotes (0x31).
+  bookTypes: [], signTypes: [],
+  note: r => r.type === 0xF7 && r.qual === 0
+    ? '<p class="sign">Searching here, you find a piece of paper with notes written on it:<br><br>“The statue is of the same materials and workmanship as that golden head Fritz found. It appears to be a mechanism of some sort. I will have to talk to Fritz about this…”</p>'
+    : r.type === 0x31 ? '<p class="muted">Jimmy’s notebook: no one but Jimmy can read his shorthand (“Why don’t you just ask me what you want to know?”).</p>' : '',
+  hidden: [0xE6],
+});
