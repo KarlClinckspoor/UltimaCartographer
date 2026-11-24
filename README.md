@@ -96,10 +96,16 @@ offsets u5d's `ultima.c` gives them.
     node tests/u5-data.test.mjs
     node tests/u6-data.test.mjs
     node tests/u7-data.test.mjs
+    node --test tests/              all of them, and the ones below
+
+`tests/exports.test.mjs` runs the three export checkers (U8, Underworld, U9; the U8 one may fail only
+on what docs/u8-export.md lists), `tests/u7si-regions.test.mjs` checks what In Wis says on known squares
+and that every region label sits in its region, and `tests/coords.test.mjs` checks the sextants'
+readings on known squares.
 
 The first compares the Akalabeth generators with `akmap.py` (12 lucky numbers: world, stats,
 levels 1–15 from three arrival squares); it needs Python and a `u0-decompiled` checkout (default
-`../u0-decompiled`). The second compares the Ultima I generator with levels dumped from the
+`../u0-decompiled`), and says it is skipped without one. The second compares the Ultima I generator with levels dumped from the
 running game (`tests/fixtures/`), which `tools/verify-u1-dungeon.py` makes through
 u1-decompiled's DOSBox harness. The third checks the Ultima II extraction against facts
 u2-decompiled's MECHANICS.md states (which maps exist, tri-lithium chest counts, the shared Earth

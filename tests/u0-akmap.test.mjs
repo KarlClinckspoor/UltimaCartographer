@@ -1,12 +1,15 @@
 // Checks js/games/u0/akgen.js against u0-decompiled/tools/akmap.py.
 // Usage: node tests/u0-akmap.test.mjs [path/to/u0-decompiled]
 import {execFileSync} from 'node:child_process';
+import {existsSync} from 'node:fs';
 import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {world, dungeon, stats} from '../js/games/u0/akgen.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tools = resolve(process.argv[2] || resolve(here, '../../u0-decompiled'), 'tools');
+// the reference is a separate repository, beside this one; without it (a fresh clone) there is nothing to compare
+if (!existsSync(resolve(tools, 'akmap.py'))) { console.log(`skipped: no ${resolve(tools, 'akmap.py')}`); process.exit(0); }
 const LUCKY = [-7, 0, 1, 2, 7, 42, 99, 1234, 31337, 65535, 1e6, 2 ** 31 - 1];
 const LEVELS = 15;
 const ARRIVE = [[1, 1], [5, 5], [2, 1]];

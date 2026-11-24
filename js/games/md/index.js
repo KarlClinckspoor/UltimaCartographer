@@ -11,7 +11,7 @@ const CHAMBERS = [[0x0CA, 0x295], [0x34D, 0x295], [0x13A, 0x17A], [0x2CD, 0x1FA]
 // The coordinates the plaques on Mars give (objcmd.c CmdLook, type 0xac on the surface): latitude
 // (y - 512) * 240 / 1024 S or N, longitude (x - 512) * 360 / 1024 counted as 180 - lon W or lon + 180 E.
 // C's division: towards zero.
-const plaque = z => z === 0 ? (x, y) => {
+export const plaque = z => z === 0 ? (x, y) => {
   const lat = Math.trunc((y - 0x200) * 0xf0 / 0x400), lon = Math.trunc((x - 0x200) * 0x168 / 0x400);
   const la = lat > 0 ? `${lat}°S` : lat < 0 ? `${-lat}°N` : '0°';
   const lo = lon === 0 || lon === 180 || lon === -180 ? `${lon === 0 ? 180 : 0}°` : lon > 0 ? `${180 - lon}°W` : `${lon + 180}°E`;

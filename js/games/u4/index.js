@@ -73,7 +73,7 @@ const townId = n => n === 1 ? 'LCB_1' : TOWN_FILES[n - 1];
 
 // The sextant's reading (U4_LOCAT.C CMD_Locate): latitude from y, longitude from x, each as two letters, the high
 // and low nibble, A for 0.
-const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
+export const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderWorld(d) {
   const W = 256, images = await gridImages(d, 'world', d.worldBytes, W, W, 32);
   let names = '', gates = '', items = '';

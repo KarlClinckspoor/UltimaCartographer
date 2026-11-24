@@ -69,7 +69,7 @@ const signHTML = s => `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>
 // The sextant's reading (cast2.c CAST2_06ec: the sextant, outdoors in Britannia at night, and In Wis): latitude from y, longitude from x, each as two letters, the high
 // and low nibble, A for 0;
 // the game prints them in runes.
-const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
+export const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderBig(d, under) {
   const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
   const images = await gridImages(d, under ? 'under' : 'brit', bytes, W, W, 32);
@@ -363,7 +363,7 @@ export default {
       const n = +m[1];
       for (const z of Object.keys(meta.towns[n].bytes).map(Number).sort((a, b) => a - b)) list.push({id: `P${n}.${z}`, name: FLOOR(z), group: `${meta.places[n - 1].name}: floors`});
     }
-    if ((m = /^D(\d)-/.exec(mapId || ''))) {
+    if ((m = /^D(\d)-/.exec(mapId || '')) && +m[1] < 8) {   // as render(): D8 and D9 are no dungeon (#u5/D8-1 drew Britannia)
       const k = +m[1], name = meta.places[32 + k].name;
       for (let l = 1; l <= 8; l++) list.push({id: `D${k}-${l}`, name: String(l), title: `Level ${l}`, group: `${name}: levels`});
       if (k !== 1) for (let r = 0; r < 16; r++) list.push({id: `D${k}-room-${r}`, name: String(r), title: `Room ${r}`, group: `${name}: rooms`});

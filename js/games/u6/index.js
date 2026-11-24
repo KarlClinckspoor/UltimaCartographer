@@ -12,7 +12,7 @@ const DUNGEONS = ['Deceit', 'Despise', 'Destard', 'Wrong', 'Covetous', 'Shame', 
 
 // The sextant and the Locate spell (spell.c SPELL_PrintLocation), on the surface and in the gargoyles' land only:
 // degrees from (304, 360), 8 squares a degree; the gargoyles' land counts 4 for each of its squares.
-const sextant = z => z === 0 || z === 5 ? (x, y) => {
+export const sextant = z => z === 0 || z === 5 ? (x, y) => {
   if (z) { x <<= 2; y <<= 2; }
   const lat = (y - 0x168) >> 3, lon = (x - 0x130) >> 3;
   return `${Math.abs(lat)}°${lat > 0 ? 'S' : 'N'}, ${Math.abs(lon)}°${lon > 0 ? 'E' : 'W'}`;

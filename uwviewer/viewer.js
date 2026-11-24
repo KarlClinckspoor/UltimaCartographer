@@ -204,7 +204,9 @@ function falloff() {
   return {full: 0, mono: mono ? 1 : 0, out};
 }
 function frame(now) {
-  const w = canvas.clientWidth * devicePixelRatio, h = canvas.clientHeight * devicePixelRatio;
+  // whole pixels: the canvas rounds a fractional size down, and comparing against the unrounded one would reset (clear
+  // and reallocate) the canvas every frame at scales like 125%
+  const w = Math.round(canvas.clientWidth * devicePixelRatio), h = Math.round(canvas.clientHeight * devicePixelRatio);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   move();
   gl.viewport(0, 0, w, h);
@@ -376,7 +378,8 @@ function writeHash() { if (!S.level) return; const c = S.cam; history.replaceSta
 function readHash() {
   const [game, level, pos] = location.hash.replace(/^#\/?/, '').split('/');
   const n = (pos || '').split(',').map(Number);
-  return {game: game === 'uw2' ? 'uw2' : 'uw1', level: +level || null, place: n.length >= 2 && !isNaN(n[0]) ? {x: n[0], z: n[1], y: n.length > 2 ? n[2] : null, yaw: n[3] || 0, pitch: n[4] || 0} : null};
+  // a hand-edited address can hold anything: a camera with a NaN in it draws nothing, so a bad height means "on the floor"
+  return {game: game === 'uw2' ? 'uw2' : 'uw1', level: +level || null, place: Number.isFinite(n[0]) && Number.isFinite(n[1]) ? {x: n[0], z: n[1], y: Number.isFinite(n[2]) ? n[2] : null, yaw: n[3] || 0, pitch: n[4] || 0} : null};
 }
 
 // ---------- start ----------

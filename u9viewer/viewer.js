@@ -290,7 +290,9 @@ async function loadMap(id, place) {
 const heightAt = (x, z) => { const m = S.map; if (!m) return 0; const xi = Math.max(0, Math.min(m.W - 1, Math.round(x))), zi = Math.max(0, Math.min(m.H - 1, Math.round(z))); return m.heights[zi * m.W + xi] / 32; };
 
 function frame() {
-  const w = canvas.clientWidth * devicePixelRatio, h = canvas.clientHeight * devicePixelRatio;
+  // whole pixels: the canvas rounds a fractional size down, and comparing against the unrounded one would reset (clear
+  // and reallocate) the canvas every frame at scales like 125%
+  const w = Math.round(canvas.clientWidth * devicePixelRatio), h = Math.round(canvas.clientHeight * devicePixelRatio);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   move();
   gl.viewport(0, 0, w, h);
@@ -467,7 +469,9 @@ const readHash = () => Object.fromEntries(new URLSearchParams(location.hash.slic
     S.terrainTex = await textureArray(tt.size, tt.count, tt.files);
     const h = readHash(), id = +(h.map || 9);
     requestAnimationFrame(frame);
-    await loadMap(S.manifest.maps.some(m => m.id === id) ? id : S.manifest.maps[0].id, h.x ? {x: +h.x, y: +h.y, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null);
+    // a hand-edited address can hold anything: a camera with a NaN in it draws nothing (move() lifts a low y above the ground)
+    const place = Number.isFinite(+h.x) && Number.isFinite(+h.z) && h.x && h.z ? {x: +h.x, y: Number.isFinite(+h.y) && h.y ? +h.y : 0, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null;
+    await loadMap(S.manifest.maps.some(m => m.id === id) ? id : S.manifest.maps[0].id, place);
     loadModels().then(() => status(S.summary)).catch(e => status('Models: ' + e.message));
     setInterval(() => { if (S.stats && !S.keys.size) $('#help').dataset.stats = `${S.stats.tilesDrawn} tiles, ${S.stats.objsDrawn} objects`; }, 500);
   } catch (e) { status(e.message); console.error(e); }
