@@ -16,6 +16,9 @@ const load = () => loading ||= (async () => {
   const [map, chunks, frames, objects, ...atlas] = await Promise.all([bin('map.bin'), bin('chunks.bin'), bin('frames.bin'), bin('objects.bin'),
     ...Array.from({length: meta.pages}, (_, i) => image(new URL(`atlas-${i}.png`, DATA)))]);
   const d = {...meta, map: new Uint16Array(map), chunks: new Uint16Array(chunks), fr: new DataView(frames), atlas};
+  // frames.bin lists the frames used, each under shape * 64 + frame: an index from that key to the record (-1 none)
+  d.at = new Int32Array(1024 * 64).fill(-1);
+  for (let o = 0; o < frames.byteLength; o += 20) d.at[d.fr.getUint32(o, true)] = o + 4;
   // objects: x, y, lift, flags, shape | frame << 10, quality (8 bytes); indexed by chunk
   const ov = new DataView(objects), n = objects.byteLength / 8;
   d.obj = {x: new Uint16Array(n), y: new Uint16Array(n), z: new Uint8Array(n), fl: new Uint8Array(n), sf: new Uint16Array(n)};
@@ -29,8 +32,9 @@ const load = () => loading ||= (async () => {
 })();
 
 // ground: U7MAP holds 12 x 12 superchunks of 16 x 16 chunk numbers; a chunk is 16 x 16 tiles of shape | frame << 10
-const groundAt = (d, x, y) => d.chunks[d.map[((y >> 8) * 12 + (x >> 8)) * 256 + ((y >> 4) & 15) * 16 + ((x >> 4) & 15)] * 256 + (y & 15) * 16 + (x & 15)];
-const FR = (d, sf) => { const k = (sf & 0x3FF) * 32 + ((sf >> 10) & 31), o = k * 16, v = d.fr; return v.getUint8(o) === 0xFF ? null : {page: v.getUint8(o), ax: v.getUint16(o + 2, true), ay: v.getUint16(o + 4, true), w: v.getUint16(o + 6, true), h: v.getUint16(o + 8, true), xl: v.getInt16(o + 10, true), ya: v.getInt16(o + 12, true), c1: v.getUint8(o + 14), c2: v.getUint8(o + 15)}; };
+const groundAt = (d, x, y) => 0x7FFF & d.chunks[d.map[((y >> 8) * 12 + (x >> 8)) * 256 + ((y >> 4) & 15) * 16 + ((x >> 4) & 15)] * 256 + (y & 15) * 16 + (x & 15)];
+// a frame number has 6 bits: 32 and up is a reflected frame (the extractor stores it ready turned)
+const FR = (d, sf) => { const o = d.at[(sf & 0x3FF) * 64 + ((sf >> 10) & 63)], v = d.fr; return o < 0 ? null : {page: v.getUint8(o), ax: v.getUint16(o + 2, true), ay: v.getUint16(o + 4, true), w: v.getUint16(o + 6, true), h: v.getUint16(o + 8, true), xl: v.getInt16(o + 10, true), ya: v.getInt16(o + 12, true), c1: v.getUint8(o + 14), c2: v.getUint8(o + 15)}; };
 const avg = f => [f.c1 & 0xF0, (f.c1 & 15) << 4, f.c2 & 0xF0, (f.c2 & 15) * 17];
 const isFlat = sf => (sf & 0x3FF) < 0x96;
 const name = (d, sf) => { const s = d.names[sf & 0x3FF] || `shape ${sf & 0x3FF}`; return s.replace(/^\w/, c => c.toUpperCase()).replace(/\/.*$/, ''); };
@@ -47,7 +51,8 @@ function slotAt(sched, hour) {
   for (const e of sched) { const a = (per - e[0] + 8) % 8; if (a < ago) { ago = a; best = e; } }
   return best;
 }
-const size = (d, s) => { const t = d.tfa[s * 3 + 2]; return [1 + (t & 7), 1 + ((t >> 3) & 7)]; };
+// a shape's footprint in tiles (TFA.DAT), x and y swapped for a reflected frame
+const size = (d, sf) => { const t = d.tfa[(sf & 0x3FF) * 3 + 2], a = 1 + (t & 7), b = 1 + ((t >> 3) & 7); return sf & (32 << 10) ? [b, a] : [a, b]; };
 
 return {
   id: cfg.id, title: cfg.title, version: 'PC/GOG version. The map and its objects as a new game starts, from the game files.',
@@ -107,7 +112,11 @@ return {
       }
       if (!off.has('people')) for (let cy = Math.max(0, ya >> 4); cy <= Math.min(CH - 1, ((yb - 1) >> 4) + 2); cy++) for (let cx = Math.max(0, xa >> 4); cx <= Math.min(CH - 1, ((xb - 1) >> 4) + 2); cx++)
         for (const n of peopleByChunk.get(cy * CH + cx) || []) if (n.pz < cut) tall.push({x: n.px, y: n.py, z: n.pz, sf: n.sf, t: -2});
-      tall.sort((a, b) => a.z - b.z || (a.x + a.y) - (b.x + b.y) || a.y - b.y);
+      // within a lift, flat objects (no height in TFA.DAT: carpets, blood, rugs) go under everything with height, as
+      // Exult orders them: a 4 x 4 carpet anchored farther south-east would otherwise be painted over a table's corner
+      const flat = sf => (d.tfa[(sf & 0x3FF) * 3] >> 5) === 0 ? 0 : 1;
+      for (const o of tall) o.f = o.t === -2 ? 1 : flat(o.sf);
+      tall.sort((a, b) => a.z - b.z || a.f - b.f || (a.x + a.y) - (b.x + b.y) || a.y - b.y);
       for (const o of tall) {
         const f = FR(d, o.sf); if (!f) continue;
         const hx = (o.x + 1) * 8 - 1 - 4 * o.z, hy = (o.y + 1) * 8 - 1 - 4 * o.z;
@@ -130,7 +139,7 @@ return {
       }
       const sf = groundAt(d, x, y), here = [];
       for (let cy = y >> 4; cy <= Math.min(CH - 1, (y >> 4) + 1); cy++) for (let cx = x >> 4; cx <= Math.min(CH - 1, (x >> 4) + 1); cx++) for (const i of d.byChunk[cy * CH + cx]) {
-        const [w, h] = size(d, d.obj.sf[i] & 0x3FF), ox = d.obj.x[i], oy = d.obj.y[i];
+        const [w, h] = size(d, d.obj.sf[i]), ox = d.obj.x[i], oy = d.obj.y[i];
         if (x <= ox && x > ox - w && y <= oy && y > oy - h) here.push(i);
       }
       here.sort((a, b) => d.obj.z[b] - d.obj.z[a]);

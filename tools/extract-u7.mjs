@@ -26,10 +26,37 @@ function flex(b) {
 const palFlex = file('PALETTES.FLX'), [po] = flex(palFlex)[0];
 const PAL = Array.from({length: 256}, (_, i) => [0, 1, 2].map(k => Math.min(255, palFlex[po + i * 3 + k] * 4)));
 
+// ---------- translucency: in a shape TFA.DAT marks translucent (blood, water, glass, fields), colours 0xF4-0xFE are
+// not colours but blends with what lies beneath, each through a table of XFORM.TBL: colour 0xF4 + k uses entry 10 - k
+// (Exult shapeid.cc). The atlas can only hold a colour and an alpha, so each table is fitted as the blend
+// out = a * tint + (1 - a) * beneath that comes nearest it over the palette's fixed colours.
+const XF = (() => {
+  const b = file('XFORM.TBL'), e = flex(b), out = [];
+  for (let k = 0; k < 11; k++) {
+    const [o] = e[10 - k];
+    let best = null;
+    for (let a = 0.05; a <= 0.95; a += 0.01) {
+      const T = [0, 1, 2].map(c => { let s = 0; for (let d = 0; d < 224; d++) s += (PAL[b[o + d]][c] - (1 - a) * PAL[d][c]) / a; return Math.max(0, Math.min(255, Math.round(s / 224))); });
+      let err = 0; for (let d = 0; d < 224; d++) for (let c = 0; c < 3; c++) { const x = PAL[b[o + d]][c] - (a * T[c] + (1 - a) * PAL[d][c]); err += x * x; }
+      if (!best || err < best.err) best = {a, T, err};
+    }
+    out.push([...best.T, Math.round(best.a * 255)]);
+  }
+  return out;
+})();
+
 // ---------- shapes ----------
 const shapes = file('SHAPES.VGA'), shapeEntries = flex(shapes);
 // A frame as {w, h, xleft, yabove, px: Int16Array (-1 transparent)}; flats (shapes < 0x96) are raw 8 x 8.
+// Frame numbers have 6 bits: 32 and up is frame - 32 reflected, its rows and columns swapped (the same object turned
+// a quarter, a west wall's version of a north wall's sconce: Exult vgafile.cc Shape_frame::reflect).
 function frame(sh, fr) {
+  if (fr & 32) {
+    const f = frame(sh, fr & 31); if (!f) return null;
+    const px = new Int16Array(f.w * f.h);
+    for (let y = 0; y < f.h; y++) for (let x = 0; x < f.w; x++) px[x * f.h + y] = f.px[y * f.w + x];
+    return {...f, w: f.h, h: f.w, xleft: f.yabove, yabove: f.xleft, px};
+  }
   const [off, len] = shapeEntries[sh] || [0, 0];
   if (!len) return null;
   const dlen = shapes.readUInt32LE(off);
@@ -66,7 +93,7 @@ function frame(sh, fr) {
 
 // ---------- the map ----------
 const u7map = file('U7MAP'), chunks = file('U7CHUNKS');
-const used = new Set(), key = (s, f) => s * 32 + f;
+const used = new Set(), key = (s, f) => s * 64 + f;   // f: 6 bits, with the reflected flag
 const usedChunks = new Set();
 for (let i = 0; i < 144 * 256; i++) usedChunks.add(u7map.readUInt16LE(i * 2));
 for (const c of usedChunks) for (let t = 0; t < 256; t++) { const v = chunks.readUInt16LE(c * 512 + t * 2); used.add(key(v & 0x3FF, (v >> 10) & 0x1F)); }
@@ -158,7 +185,7 @@ const npcs = [];
 
 // ---------- atlas: the used frames, shelf-packed into 2048 x 2048 pages ----------
 const frames = [];
-for (const k of used) { const fr = frame(k >> 5, k & 31); if (fr) frames.push({k, ...fr}); }
+for (const k of used) { const fr = frame(k >> 6, k & 63); if (fr) frames.push({k, ...fr}); }
 frames.sort((a, b) => b.h - a.h || b.w - a.w);
 const PAGE = 2048, pages = [];
 let page = null, sx = 0, sy = 0, shelf = 0;
@@ -168,11 +195,13 @@ for (const fr of frames) {
   if (sx + fr.w > PAGE) { sx = 0; sy += shelf; shelf = 0; }
   if (sy + fr.h > PAGE) newPage();
   fr.page = pages.length - 1; fr.ax = sx; fr.ay = sy;
+  const clear = tfa[(fr.k >> 6) * 3 + 2] & 128;   // translucent
   for (let y = 0; y < fr.h; y++) for (let x = 0; x < fr.w; x++) {
     const c = fr.px[y * fr.w + x];
     if (c < 0 || c === 255) continue;
     const o = ((sy + y) * PAGE + sx + x) * 4;
-    [page[o], page[o + 1], page[o + 2]] = PAL[c]; page[o + 3] = 255;
+    if (clear && c >= 0xF4) [page[o], page[o + 1], page[o + 2], page[o + 3]] = XF[c - 0xF4];
+    else { [page[o], page[o + 1], page[o + 2]] = PAL[c]; page[o + 3] = 255; }
   }
   sx += fr.w; shelf = Math.max(shelf, fr.h);
 }
@@ -181,11 +210,12 @@ const lastH = Math.min(PAGE, sy + shelf);
 for (const f of ['atlas-0.png', 'atlas-1.png', 'atlas-2.png', 'atlas-3.png', 'atlas-4.png', 'atlas-5.png', 'atlas-6.png', 'atlas-7.png']) if (existsSync(join(out, f))) rmSync(join(out, f));
 pages.forEach((pg, i) => { const h = i === pages.length - 1 ? lastH : PAGE; writeFileSync(join(out, `atlas-${i}.png`), png(PAGE, h, pg.subarray(0, PAGE * h * 4), 4)); });
 
-// frames.bin: for every shape * 32 + frame, 16 bytes: page (0xFF none), x, y, w, h, xleft, yabove (int16), average colour (RGBA)
-const fb = Buffer.alloc(1024 * 32 * 16);
-for (let i = 0; i < 1024 * 32; i++) fb[i * 16] = 0xFF;
-for (const fr of frames) {
-  const o = fr.k * 16;
+// frames.bin: the frames used, 20 bytes each: shape * 64 + frame (uint32), then page, (unused), x, y, w, h, xleft,
+// yabove (int16), average colour (RGBA, 4 bits each)
+const fb = Buffer.alloc(frames.length * 20);
+for (const [j, fr] of frames.entries()) {
+  fb.writeUInt32LE(fr.k, j * 20);
+  const o = j * 20 + 4;
   let r = 0, g = 0, bl = 0, n = 0;
   for (const c of fr.px) if (c >= 0 && c !== 255) { r += PAL[c][0]; g += PAL[c][1]; bl += PAL[c][2]; n++; }
   fb[o] = fr.page; fb.writeUInt16LE(fr.ax, o + 2); fb.writeUInt16LE(fr.ay, o + 4); fb.writeUInt16LE(fr.w, o + 6); fb.writeUInt16LE(fr.h, o + 8);
