@@ -204,7 +204,9 @@ function falloff() {
   return {full: 0, mono: mono ? 1 : 0, out};
 }
 function frame(now) {
-  const w = canvas.clientWidth * devicePixelRatio, h = canvas.clientHeight * devicePixelRatio;
+  // whole pixels: the canvas rounds a fractional size down, and comparing against the unrounded one would reset (clear
+  // and reallocate) the canvas every frame at scales like 125%
+  const w = Math.round(canvas.clientWidth * devicePixelRatio), h = Math.round(canvas.clientHeight * devicePixelRatio);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   move();
   gl.viewport(0, 0, w, h);

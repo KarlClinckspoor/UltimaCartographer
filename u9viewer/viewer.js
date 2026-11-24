@@ -290,7 +290,9 @@ async function loadMap(id, place) {
 const heightAt = (x, z) => { const m = S.map; if (!m) return 0; const xi = Math.max(0, Math.min(m.W - 1, Math.round(x))), zi = Math.max(0, Math.min(m.H - 1, Math.round(z))); return m.heights[zi * m.W + xi] / 32; };
 
 function frame() {
-  const w = canvas.clientWidth * devicePixelRatio, h = canvas.clientHeight * devicePixelRatio;
+  // whole pixels: the canvas rounds a fractional size down, and comparing against the unrounded one would reset (clear
+  // and reallocate) the canvas every frame at scales like 125%
+  const w = Math.round(canvas.clientWidth * devicePixelRatio), h = Math.round(canvas.clientHeight * devicePixelRatio);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   move();
   gl.viewport(0, 0, w, h);
