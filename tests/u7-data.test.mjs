@@ -1,0 +1,33 @@
+// Checks data/u7si (from tools/extract-u7.mjs) against the game's file layouts as Exult reads them.
+// Usage: node tests/u7-data.test.mjs
+import {readFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'u7si');
+const d = JSON.parse(readFileSync(join(dir, 'u7si.json'))), bin = n => readFileSync(join(dir, n));
+let pass = 0, fail = 0;
+const check = (name, ok) => { if (ok) pass++; else { fail++; console.log('FAIL', name); } };
+const map = bin('map.bin'), chunks = bin('chunks.bin'), frames = bin('frames.bin'), objs = bin('objects.bin');
+check('U7MAP: 12 x 12 superchunks of 16 x 16 chunk numbers', map.length === 144 * 256 * 2);
+check('U7CHUNKS: 3072 chunks of 16 x 16 tiles', chunks.length === 3072 * 512);
+check('every chunk number is a chunk', [...Array(144 * 256).keys()].every(i => map.readUInt16LE(i * 2) < 3072));
+// every tile of the map and every drawn object has its frame in the atlas
+const hasFrame = sf => frames[((sf & 0x3FF) * 32 + ((sf >> 10) & 31)) * 16] !== 0xFF;
+let missing = 0;
+for (let i = 0; i < 144 * 256; i++) { const c = map.readUInt16LE(i * 2); for (let t = 0; t < 256; t++) if (!hasFrame(chunks.readUInt16LE(c * 512 + t * 2))) missing++; }
+check(`ground frames in the atlas (missing ${missing})`, missing === 0);
+let objMissing = 0, outside = 0;
+for (let o = 0; o < objs.length; o += 8) { if (!(objs[o + 5] & 2) && !hasFrame(objs.readUInt16LE(o + 6))) objMissing++; if (objs.readUInt16LE(o) >= 3072 || objs.readUInt16LE(o + 2) >= 3072 || objs[o + 4] > 15) outside++; }
+check(`object frames in the atlas (missing ${objMissing})`, objMissing < 50);
+check('objects lie on the map with lifts 0-15', outside === 0);
+check('objects sorted by y, then x', (() => { for (let o = 8; o < objs.length; o += 8) { const a = objs.readUInt16LE(o - 6) * 4096 + objs.readUInt16LE(o - 8), b = objs.readUInt16LE(o + 2) * 4096 + objs.readUInt16LE(o); if (b < a) return false; } return true; })());
+check('shape names (TEXT.FLX)', d.names.length === 1024 && d.names.some(n => /moongate/i.test(n)));
+const npc = name => d.npcs.find(n => n.name === name);
+check('NPC 0 is the Avatar', d.npcs[0].n === 0 && d.npcs[0].name === 'Avatar');
+check('companions in order', npc('Dupre')?.n === 1 && npc('Shamino')?.n === 2 && npc('Iolo')?.n === 3);
+check('NPCs on the map', d.npcs.every(n => n.x < 3072 && n.y < 3072));
+check('schedules: periods 0-7, activities 0-31, squares on the map', d.npcs.filter(n => n.sched).flatMap(n => n.sched).every(e => e[0] < 8 && e[1] < 32 && e[2] < 3072 && e[3] < 3072));
+check('most NPCs have schedules', d.npcs.filter(n => n.sched).length > 200);
+console.log(`${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

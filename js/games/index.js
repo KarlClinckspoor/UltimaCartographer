@@ -8,6 +8,7 @@ import u5 from './u5/index.js';
 import u6 from './u6/index.js';
 import se from './se/index.js';
 import md from './md/index.js';
+import u7si from './u7si/index.js';
 
 export const GAMES = [
   u0,
@@ -19,6 +20,6 @@ export const GAMES = [
   u6,
   se,
   md,
-  {id: 'u7si', title: 'Ultima VII: Serpent Isle'},
+  u7si,
   {id: 'u8', title: 'Ultima VIII'},
 ];

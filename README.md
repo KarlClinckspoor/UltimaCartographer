@@ -34,6 +34,7 @@ block ES modules over `file://`.)
 | `js/games/u4/index.js` | Ultima IV's maps: Britannia, 16 castles, townes and villages (and LB's upper floor), 8 dungeons × 8 levels and their rooms |
 | `js/games/u5/index.js` | Ultima V's maps: Britannia, the Underworld, 32 settlements floor by floor, 8 dungeons × 8 levels and their rooms |
 | `js/games/u6/engine.js` | The Ultima VI engine's maps (Ultima VI, The Savage Empire, Martian Dreams): drawn in the browser a grid tile at a time from the game's chunk map, objects and people |
+| `js/games/u7si/index.js` | Serpent Isle: the 3072 × 3072-tile world drawn as you pan, with a height cutoff and people by the hour |
 | `js/games/u6/`, `js/games/se/`, `js/games/md/` | Each game's tables for the engine (level names, entrances, readable objects) |
 | `data/u3/`, `data/u4/`, `data/u5/` | Extracted by `tools/extract-u3.mjs`, `tools/extract-u4.mjs` and `tools/extract-u5.mjs` |
 | `js/lib/draw.js` | Drawing helpers shared by game modules (U2 onwards) |
@@ -61,6 +62,7 @@ only if the extractor changes:
     node tools/extract-u6.mjs u6 "C:/GOG Games/Ultima 6" ../u6-decompiled/dialogue.json
     node tools/extract-u6.mjs se "C:/GOG Games/The Savage Empire/SAVAGE" ../u6se-decompiled/dialogue.json
     node tools/extract-u6.mjs md "C:/GOG Games/Martian Dreams/MARTIAN" ../u6md-decompiled/dialogue.json
+    node tools/extract-u7.mjs u7si "C:/GOG Games/Ultima 7 - Serpent Isle/STATIC"
 
 Ultima IV reads its game data from the GOG folder and the tables the game keeps in code (tile
 names, place names and squares, moongates, mantras, shop names and counter rows) from the port's C
@@ -79,6 +81,7 @@ offsets u5d's `ultima.c` gives them.
     node tests/u4-data.test.mjs
     node tests/u5-data.test.mjs
     node tests/u6-data.test.mjs
+    node tests/u7-data.test.mjs
 
 The first compares the Akalabeth generators with `akmap.py` (12 lucky numbers: world, stats,
 levels 1–15 from three arrival squares); it needs Python and a `u0-decompiled` checkout (default
@@ -162,6 +165,20 @@ Britannia leads to a ladder whose way back returns to the same square.
   (keywords and answers; "depends" marks answers that change with the story).
 - Ultima VI labels the dungeon and shrine entrances with the names Shamino gives them.
 - Dungeon maps that wrap show arrows at their edges.
+
+## Ultima VII: Serpent Isle notes
+
+- PC/GOG version. The map is kept as the game keeps it: U7MAP (144 superchunks of chunk numbers)
+  and U7CHUNKS (3072 reusable 16 × 16-tile chunks), plus the fixed (U7IFIX) and movable
+  (INITGAME.DAT u7ireg) objects as 8-byte records. Only the 8,300 shape frames the map uses are
+  extracted from SHAPES.VGA, into two atlas pages, so the whole world is about 4.7 MB; drawing it
+  as pictures instead would take hundreds.
+- Height cutoff: objects at or above the chosen lift are left out. 5 takes the roofs off most
+  buildings to show inside; 16 shows everything.
+- People come from npc.dat with their names and are placed by their schedule.dat entries
+  (3-hour periods); their popups list their day with buttons to follow them.
+- The draw order is simple (lift, then distance), so some overlaps differ from the game. Formats
+  as Exult reads them (gamemap.cc, actorio.cc, readnpcs.cc, shapes/vgafile.cc).
 
 ## Credits
 

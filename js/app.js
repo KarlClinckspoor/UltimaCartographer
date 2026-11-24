@@ -176,7 +176,7 @@ async function show({focus, initialView, keepView} = {}) {
         return cv;
       },
     });
-    drawLayer = new Layer({tileSize: 256, bounds, noWrap: true, maxNativeZoom: Math.log2(view.native || 16), className: 'pixel-tile', keepBuffer: 1}).addTo(map);
+    drawLayer = new Layer({tileSize: 256, bounds, noWrap: true, minZoom: -10, maxNativeZoom: Math.log2(view.native || 16), className: 'pixel-tile', keepBuffer: 1}).addTo(map);
   }
   // Pixel art: crisp when drawn at its own size or bigger, smoothed when shrunk.
   const first = view.images?.[0]?.src;
@@ -189,6 +189,7 @@ async function show({focus, initialView, keepView} = {}) {
   map.setMaxBounds(shown.pad(0.5));
   hoverRect.remove(); selRect.remove();
 
+  map.setMinZoom(-6);   // getBoundsZoom clamps to the current minimum
   const fitZoom = map.getBoundsZoom(shown, false, L.point(40, 40));
   map.setMinZoom(Math.min(fitZoom - 1, 3));
   if (initialView) map.setView(toLatLng(initialView.x, initialView.y), initialView.z, {animate: false});
