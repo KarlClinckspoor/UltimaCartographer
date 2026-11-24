@@ -99,7 +99,8 @@ function readHash() {
   let v = null;
   if (q.view) { const [x, y, z] = q.view.split(',').map(Number); if ([x, y, z].every(Number.isFinite)) v = {x, y, z}; }
   delete q.view;
-  return {game, mapId: mapId || game.defaultMap, params: normalize(game, q), view: v};
+  // an unknown game falls back on the first one: the map id named belongs to the other game, so it is dropped too
+  return {game, mapId: (game.id === gameId && mapId) || game.defaultMap, params: normalize(game, q), view: v};
 }
 
 function normalize(game, q) {
@@ -152,6 +153,15 @@ async function show({focus, initialView, keepView} = {}) {
     v = await game.render(mapId, params);
   } catch (e) {
     console.error(e);
+    if (ticket !== showing) return;   // a newer show() is under way: it owns the title
+    // an address naming a map the game doesn't have (#uw1/L99): open the game's default map instead of leaving an
+    // empty panel with no way on
+    if (mapId !== game.defaultMap) {
+      state.mapId = game.defaultMap;
+      history.replaceState(null, '', hashFor(game, state.mapId, params, null));
+      return show({});
+    }
+    $('#game').value = game.id;
     $('#map-title').innerHTML = `Could not draw this map<small>${esc(e.message)}</small>`;
     return;
   }
