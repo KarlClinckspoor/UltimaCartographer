@@ -27,6 +27,21 @@ const CGA1 = [[0, 0, 0], [0, 170, 170], [170, 0, 170], [170, 170, 170]];   // pa
   writeFileSync(join(out, 'tiles.png'), png(w, h, px));
 }
 
+// CHARSET.ULT: 128 characters of 8 x 8, 2 bits a pixel, 2 bytes a row, the 4 even rows then the 4 odd
+// (FORMATS.md 2). The Peer-at-gem view of a dungeon prints these (view.c ShowDungeonMap).
+{
+  const cs = file('CHARSET.ULT'), w = 16 * 8, h = 8 * 8, px = Buffer.alloc(w * h * 3);
+  for (let c = 0; c < 128; c++) for (let r = 0; r < 8; r++) {
+    const row = r % 2 === 0 ? r / 2 : 4 + (r - 1) / 2;
+    for (let x = 0; x < 8; x++) {
+      const v = (cs[c * 16 + row * 2 + (x >> 2)] >> (6 - 2 * (x & 3))) & 3;
+      const o = ((Math.floor(c / 16) * 8 + r) * w + (c % 16) * 8 + x) * 3;
+      [px[o], px[o + 1], px[o + 2]] = CGA1[v];
+    }
+  }
+  writeFileSync(join(out, 'charset.png'), png(w, h, px));
+}
+
 // Maps (4648 bytes): the 64 x 64 map, speeches at 1000h (word offsets from 1000h, count = first / 2),
 // creatures: tile 1180h, under 11A0h, x 11C0h, y 11E0h, talk 1200h (32 each).
 const MAPS = ['SOSARIA', 'AMBROSIA', 'BRITISH', 'LCB', 'MOON', 'YEW', 'MONTOR_E', 'MONTOR_W', 'GREY', 'DAWN', 'DEVIL', 'FAWN', 'DEATH', 'EXODUS'];

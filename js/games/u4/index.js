@@ -37,7 +37,8 @@ const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441
 
 let loading = null;
 const load = () => loading ||= (async () => {
-  const [d, tiles] = await Promise.all([json(new URL('u4.json', DATA), 'run tools/extract-u4.mjs'), image(new URL('tiles.png', DATA))]);
+  const [d, tiles, charset] = await Promise.all([json(new URL('u4.json', DATA), 'run tools/extract-u4.mjs'), image(new URL('tiles.png', DATA)), image(new URL('charset.png', DATA))]);
+  d.charset = charset;
   d.worldBytes = Uint8Array.from(atob(d.world), c => c.charCodeAt(0));
   const hex = h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16));
   for (const t of Object.values(d.towns)) t.bytes = hex(t.cells);
@@ -211,27 +212,31 @@ const glyph = {
 };
 const FOUNTAIN = ['plain (no effect)', 'healing', 'acid (hurts)', 'curing (poison)', 'poison'];
 const FIELD = ['poison', 'energy', 'fire', 'sleep'];
+// U4_PEER.C DngMapChars: the character the gem view prints for each kind of dungeon cell (cell >> 4), from CHARSET.EGA
+const GEM_CHARS = [0x20, 0x06, 0x05, 0x04, 0x24, 0x20, 0x20, 0x0F, 0x54, 0x46, 0x5E, 0x00, 0x0E, 0x0E, 0x02, 0x03];
+// a small label in a cell's corner, leaving the gem glyph visible
+export const badge = (x, y, text, color) => `<rect x="${x + .02}" y="${y + .02}" width="${.14 + .17 * String(text).length}" height=".34" rx=".06" fill="#000" opacity=".8"/><text x="${x + .09}" y="${y + .29}" font-size=".3" font-family="system-ui, sans-serif" font-weight="700" fill="${color}">${esc(String(text))}</text>`;
 const hasMonster = c => (c & 15) && ![0x80, 0x90, 0xA0, 0xD0, 0xF0].includes(c & 0xF0);
 
 async function renderLevel(d, key, L) {
   const di = DUNGEON_FILES.indexOf(key), dn = d.dungeons[key], pl = d.places[16 + di], abyss = key === 'ABYSS';
   const cells = dn.bytes.subarray((L - 1) * 64, L * 64), at = (x, y) => cells[y * 8 + x];
-  const parts = {base: '', doors: '', secret: '', chests: '', ladders: '', specials: '', rooms: '', monsters: ''};
+  // the level as the gem view prints it: one CHARSET.EGA character a cell (U4_PEER.C ShowDungeonMap)
+  const gem = canvas(64, 64), gctx = gem.getContext('2d');
+  const parts = {rooms: '', monsters: ''};
   const features = [];
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
     const c = at(x, y), hi = c & 0xF0;
-    parts.base += hi === 0xF0 || hi === 0xE0 ? glyph.wall(x, y) : rect(x, y, 1, 1, C.floor);
-    if (hi === 0xC0) parts.doors += glyph.door(x, y);
-    if (hi === 0xE0) { parts.secret += glyph.secret(x, y); features.push({name: 'Secret door', x, y}); }
-    if (hi === 0x40) { parts.chests += glyph.chest(x, y); features.push({name: 'Chest', x, y}); }
-    if (hi >= 0x10 && hi <= 0x30) { parts.ladders += glyph.ladder(x, y, hi & 0x10, hi & 0x20); features.unshift({name: ['', 'Ladder up', 'Ladder down', 'Ladder up and down'][hi >> 4], x, y}); }
-    const sp = {0x50: ['H', 'Hole in the ceiling'], 0x60: ['H', 'Hole in the floor'], 0x70: ['O', 'Magic orb'], 0x80: ['X', 'Trap'], 0x90: ['F', `Fountain: ${FOUNTAIN[c & 15] || '?'}`], 0xA0: ['≡', `${(FIELD[c & 15] || '?')} field`], 0xB0: ['A', 'Altar']}[hi];
-    if (sp) { parts.specials += glyph.mark(x, y, sp[0], C.event); features.push({name: sp[1].replace(/^\w/, ch => ch.toUpperCase()), x, y}); }
-    if (hi === 0xD0) { parts.rooms += glyph.mark(x, y, String(c & 15), C.room); features.push({name: `Room ${c & 15}${(c & 15) === 15 && !abyss ? ' (altar room)' : ''}`, x, y}); }
-    if (hasMonster(c)) { const mt = 0x90 + (c & 15) * 4 - 4; parts.monsters += glyph.mark(x, y, tname(d, mt)[0], C.mon); features.push({name: tname(d, mt), x, y, detail: 'monster'}); }
+    blit(gctx, d.charset, 8, GEM_CHARS[hi >> 4], x, y);
+    if (hi === 0xE0) features.push({name: 'Secret door', x, y});
+    if (hi === 0x40) features.push({name: 'Chest', x, y});
+    if (hi >= 0x10 && hi <= 0x30) features.unshift({name: ['', 'Ladder up', 'Ladder down', 'Ladder up and down'][hi >> 4], x, y});
+    const sp = {0x50: 'Hole in the ceiling', 0x60: 'Hole in the floor', 0x70: 'Magic orb', 0x80: 'Trap', 0x90: `Fountain: ${FOUNTAIN[c & 15] || '?'}`, 0xA0: `${(FIELD[c & 15] || '?')} field`, 0xB0: 'Altar'}[hi];
+    if (sp) features.push({name: sp.replace(/^\w/, ch => ch.toUpperCase()), x, y});
+    if (hi === 0xD0) { parts.rooms += badge(x, y, c & 15, C.room); features.push({name: `Room ${c & 15}${(c & 15) === 15 && !abyss ? ' (altar room)' : ''}`, x, y}); }
+    if (hasMonster(c)) { const mt = 0x90 + (c & 15) * 4 - 4; parts.monsters += badge(x + .52, y + .62, tname(d, mt)[0], C.mon); features.push({name: tname(d, mt), x, y, detail: 'monster'}); }
   }
-  const svg = svgDoc(8, 8, parts.base + Object.entries(parts).filter(([k]) => k !== 'base').map(([k, v]) => g(k, v)).join('') +
-    g('grid', gridLines(8, 8)) + (L === 1 ? g('start', glyph.start(1, 1)) : ''));
+  const svg = svgDoc(8, 8, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(8, 8)) + (L === 1 ? g('start', glyph.start(1, 1)) : ''));
   const id = l => `${key}-${l}`;
   const roomIndex = n => abyss ? ((L - 1) >> 1) * 16 + n : n;
   const cell = (x, y) => {
@@ -265,19 +270,16 @@ async function renderLevel(d, key, L) {
     return {title, body, links};
   };
   const info = `<h3>${esc(pl.name.replace(/!$/, ''))}, level ${L}</h3>
-    <p>Fixed in the game file, the same for everyone. Rooms (pink numbers) open into fights on their own 11 × 11 maps.</p>
+    <p>Drawn as the game’s gem view draws it (Peer at a gem, or the View spell): $ chests, T traps, F fountains, ^ fields, and the signs for ladders, doors and walls. Fixed in the game file, the same for everyone.</p>
+    <p>Rooms (pink numbers) open into fights on their own 11 × 11 maps; red letters are the monsters waiting at the start, which the gem view does not show.</p>
     ${STONES[di] ? `<p>Altar stone: ${STONES[di]}.</p>` : ''}
     <p class="muted">Each level is 8 × 8 and wraps at its edges.</p>`;
   return {
-    title: `${pl.name.replace(/!$/, '')}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, svg, cell, features, info,
+    title: `${pl.name.replace(/!$/, '')}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, native: 8, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [
-      {id: 'doors', name: 'Doors', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.door(0, 0))},
-      {id: 'secret', name: 'Secret doors', swatch: swatch(rect(0, 0, 1, 1, C.wall) + glyph.secret(0, 0))},
-      {id: 'chests', name: 'Chests', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.chest(0, 0))},
-      {id: 'ladders', name: 'Ladders', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.ladder(0, 0, true, false))},
-      {id: 'specials', name: 'Orbs, fountains, traps, fields, altars', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, 'F', C.event))},
-      {id: 'rooms', name: 'Rooms', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, '1', C.room))},
-      {id: 'monsters', name: 'Monsters at the start', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, 'R', C.mon))},
+      {id: 'gem', name: 'Gem view'},
+      {id: 'rooms', name: 'Room numbers', swatch: swatch(badge(.2, .3, 1, C.room))},
+      {id: 'monsters', name: 'Monsters at the start', swatch: swatch(badge(.2, .3, 'R', C.mon))},
       ...(L === 1 ? [{id: 'start', name: 'Where you arrive', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.start(0, 0))}] : []),
       {id: 'grid', name: 'Grid', swatch: swatch(rect(0, 0, 1, 1, C.floor) + path('M.5 0V1M0 .5H1', '#888', .06))},
     ],

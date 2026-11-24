@@ -24,7 +24,9 @@ const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441
 
 let loading = null;
 const load = () => loading ||= (async () => {
-  const [d, tiles] = await Promise.all([json(new URL('u5.json', DATA), 'run tools/extract-u5.mjs'), image(new URL('tiles.png', DATA))]);
+  const [d, tiles, font0, font1] = await Promise.all([json(new URL('u5.json', DATA), 'run tools/extract-u5.mjs'), image(new URL('tiles.png', DATA)),
+    image(new URL('font0.png', DATA)), image(new URL('font1.png', DATA))]);
+  d.fonts = [font0, font1];
   const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0)), hex = h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16));
   d.britBytes = b64(d.brit); d.underBytes = b64(d.under);
   for (const t of Object.values(d.towns)) { t.bytes = {}; for (const [z, h] of Object.entries(t.floors)) t.bytes[z] = hex(h); t.people = t.people.filter(q => q.type); }
@@ -237,26 +239,60 @@ function describe(d, k, c) {
   return ['?', ''];
 }
 
+// The View (gem or spell) in a dungeon: dnglook.c DrawViewCell. Each cell is an 8 x 8 glyph of IBM.CH (font 0) or
+// RUNES.CH (font 1) in a text colour, or a little picture drawn with lines (the fountain, a field's stripes).
+const EGA5 = {black: '#000000', blue: '#0000aa', lightGray: '#aaaaaa', red: '#ff5555', magenta: '#ff55ff', blueB: '#5555ff', green: '#55ff55', yellow: '#ffff55', white: '#ffffff'};
+function viewCell(d, ctx, x, y, cell) {
+  const X = x * 8, Y = y * 8, kind = cell >> 4;
+  const glyph = (font, ch, fg, bg) => {
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(X, Y, 8, 8); }
+    const t = canvas(8, 8), tc = t.getContext('2d');
+    tc.drawImage(d.fonts[font], (ch % 16) * 8, Math.floor(ch / 16) * 8, 8, 8, 0, 0, 8, 8);
+    tc.globalCompositeOperation = 'source-in'; tc.fillStyle = fg; tc.fillRect(0, 0, 8, 8);
+    ctx.drawImage(t, X, Y);
+  };
+  const line = (color, x0, y0, x1, y1) => { ctx.fillStyle = color; ctx.fillRect(X + Math.min(x0, x1), Y + Math.min(y0, y1), Math.abs(x1 - x0) + 1, Math.abs(y1 - y0) + 1); };
+  switch (kind) {
+    case 0: if (cell & 8) glyph(0, 0x18, EGA5.lightGray); break;   // where a fall landed: a grapple klimbs up
+    case 1: glyph(1, 0x2E, EGA5.lightGray); break;   // ladder up
+    case 2: glyph(1, 0x2D, EGA5.lightGray); break;   // ladder down
+    case 3: glyph(1, 0x2F, EGA5.lightGray); break;   // ladder up and down
+    case 4: glyph(1, 0x70, EGA5.yellow); break;      // chest
+    case 5:   // fountain
+      line(EGA5.white, 1, 4, 6, 4); line(EGA5.white, 2, 5, 5, 5); line(EGA5.white, 1, 6, 2, 6); line(EGA5.white, 5, 6, 6, 6);
+      line(EGA5.blueB, 1, 2, 1, 2); line(EGA5.blueB, 2, 1, 2, 1); line(EGA5.blueB, 3, 2, 4, 2); line(EGA5.blueB, 3, 3, 4, 3); line(EGA5.blueB, 5, 1, 5, 1); line(EGA5.blueB, 6, 2, 6, 2);
+      break;
+    case 6:
+      if (cell === 0x60) glyph(0, 0x19, EGA5.lightGray);
+      else if (cell === 0x61 || cell === 0x69) glyph(1, 0x71, EGA5.lightGray);   // pit trap
+      else if (cell === 0x68) glyph(0, 0x12, EGA5.lightGray);
+      else glyph(1, 0x72, EGA5.red);
+      break;
+    case 8:   // a field: stripes in magenta, red, blue and green
+      [[EGA5.magenta, 0], [EGA5.red, 2], [EGA5.blueB, 4], [EGA5.green, 6]].forEach(([c, r]) => { line(c, 1, r, 6, r); line(c, 1, r + 1, 6, r + 1); });
+      break;
+    case 10: case 15: glyph(1, 0x73, EGA5.yellow); break;   // a room's door
+    case 11: if (cell === 0xB0) glyph(0, 0x7F, EGA5.white); else glyph(1, 0x74, EGA5.white); break;   // wall; with writing
+    case 12: glyph(1, 0x75, EGA5.white, EGA5.blue); break;
+    case 13: glyph(1, 0x76, EGA5.white, EGA5.blue); break;   // the EGA driver's background
+    case 14: glyph(1, 0x77, EGA5.yellow); break;   // door
+  }
+}
+const badge = (x, y, text, color) => `<rect x="${x + .02}" y="${y + .02}" width="${.14 + .17 * String(text).length}" height=".34" rx=".06" fill="#000" opacity=".8"/><text x="${x + .09}" y="${y + .29}" font-size=".3" font-family="system-ui, sans-serif" font-weight="700" fill="${color}">${esc(String(text))}</text>`;
+
 function renderLevel(d, k, L) {
   const pl = d.places[32 + k], cells = d.dungeonBytes[k].subarray((L - 1) * 64, L * 64), at = (x, y) => cells[y * 8 + x];
-  const wallCol = ['#5a4a42', '#4b4e45', '#4b4e45', '#5a4a42', '#5a4a42', '#4a463c', '#4a463c', '#4b4e45'][k];
-  const parts = {base: '', doors: '', secret: '', chests: '', ladders: '', specials: '', rooms: ''}, features = [];
+  const gem = canvas(64, 64), gctx = gem.getContext('2d');
+  const parts = {rooms: ''}, features = [];
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
     const c = at(x, y), hi = c >> 4, [name] = describe(d, k, c);
-    parts.base += hi === 11 || hi === 13 || hi === 12 ? glyph.wall(x, y, wallCol) : rect(x, y, 1, 1, C.floor);
-    if (hi === 12) parts.specials += glyph.mark(x, y, '✕', '#9a9a9a');
-    if (hi === 11 && (c & 15)) { parts.specials += glyph.mark(x, y, '✎', C.sign); features.push({name: describe(d, k, c)[1].replace(/<[^>]+>/g, ''), x, y}); }
-    if (hi === 14) parts.doors += glyph.door(x, y);
-    if (hi === 13) { parts.secret += glyph.secret(x, y); features.push({name, x, y}); }
-    if (hi === 4 || hi === 7) { parts.chests += glyph.chest(x, y, hi === 7); features.push({name, x, y}); }
-    if (hi >= 1 && hi <= 3) { parts.ladders += glyph.ladder(x, y, hi & 1, hi & 2); features.unshift({name, x, y}); }
-    const sp = {5: ['F', C.event], 6: ['P', C.event], 8: ['≡', C.event]}[hi];
-    if (sp && !(hi === 6 && (c & 15) % 8 === 1)) { parts.specials += glyph.mark(x, y, sp[0], sp[1]); features.push({name, x, y}); }
-    if (hi === 6 && (c & 15) % 8 === 1) { parts.specials += glyph.mark(x, y, 'P', '#777'); features.push({name, x, y}); }
-    if (hi === 10 || hi === 15) { parts.rooms += glyph.door(x, y, C.room) + glyph.mark(x, y, String(c & 15), C.room); features.push({name: `Room ${c & 15}`, x, y}); }
-    if (c < 0x80 && (c & 8) && hi !== 6) parts.specials += `<path d="M${x + .12} ${y + .3}l.12 -.18l.12 .18" fill="none" stroke="${C.ladder}" stroke-width=".05"/>`;
+    viewCell(d, gctx, x, y, c);
+    if (hi === 11 && (c & 15)) features.push({name: describe(d, k, c)[1].replace(/<[^>]+>/g, ''), x, y});
+    if (hi === 13 || hi === 4 || hi === 7 || hi === 5 || hi === 6 || hi === 8) features.push({name, x, y});
+    if (hi >= 1 && hi <= 3) features.unshift({name, x, y});
+    if (hi === 10 || hi === 15) { parts.rooms += badge(x, y, c & 15, C.room); features.push({name: `Room ${c & 15}`, x, y}); }
   }
-  const svg = svgDoc(8, 8, parts.base + Object.entries(parts).filter(([kk]) => kk !== 'base').map(([kk, v]) => g(kk, v)).join('') + g('grid', gridLines(8, 8)));
+  const svg = svgDoc(8, 8, g('rooms', parts.rooms) + g('grid', gridLines(8, 8)));
   const id = l => `D${k}-${l}`;
   const cell = (x, y) => {
     const c = at(x, y), hi = c >> 4, [title, text] = describe(d, k, c), links = [];
@@ -268,16 +304,13 @@ function renderLevel(d, k, L) {
   };
   const info = `<h3>${esc(pl.name)}, level ${L}</h3>
     <p>Fixed in the game file, the same for everyone. Klimbing up from level 1 leaves for Britannia; going down from level 8 leads into the Underworld, both at the dungeon’s square.</p>
-    <p class="muted">Each level is 8 × 8 and wraps at its edges. Pink doors open into rooms, fights on their own 11 × 11 maps. A small blue chevron: a grapple klimbs up from that square.</p>`;
+    <p>Drawn as the View (a gem, or the spell) draws it, with the game’s own glyphs and colours. Room doors carry their room’s number: each opens into a fight on its own 11 × 11 map.</p>
+    <p class="muted">Each level is 8 × 8 and wraps at its edges. An arrow on plain floor marks where a fall lands; a grapple klimbs back up from there.</p>`;
   return {
-    title: `${pl.name}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, svg, cell, features, info,
+    title: `${pl.name}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, native: 8, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [
-      {id: 'doors', name: 'Doors', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.door(0, 0))},
-      {id: 'secret', name: 'Secret doors', swatch: swatch(rect(0, 0, 1, 1, C.wall) + glyph.secret(0, 0))},
-      {id: 'chests', name: 'Chests', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.chest(0, 0))},
-      {id: 'ladders', name: 'Ladders', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.ladder(0, 0, true, false))},
-      {id: 'specials', name: 'Fountains, pits, fields, writing', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, 'F', C.event))},
-      {id: 'rooms', name: 'Rooms', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.mark(0, 0, '1', C.room))},
+      {id: 'gem', name: 'Gem view'},
+      {id: 'rooms', name: 'Room numbers', swatch: swatch(badge(.2, .3, 1, C.room))},
       {id: 'grid', name: 'Grid', swatch: swatch(rect(0, 0, 1, 1, C.floor) + path('M.5 0V1M0 .5H1', '#888', .06))},
     ],
   };

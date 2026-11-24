@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ultima IX viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0c0a; color: #e4e1d6; font: 14px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; outline: none; }
+  #panel { position: absolute; top: 10px; left: 10px; background: rgba(22,23,20,.88); border: 1px solid #34352f; border-radius: 8px; padding: 10px 12px; max-width: 320px; }
+  #panel h1 { font: 600 16px Georgia, serif; color: #e0b354; margin: 0 0 8px; }
+  #panel label { display: block; margin: 6px 0 2px; color: #9a978b; font-size: 12px; }
+  select, input[type=range] { width: 100%; }
+  select { background: #23241f; color: #e4e1d6; border: 1px solid #34352f; border-radius: 4px; padding: 4px; }
+  #status, #help { color: #9a978b; font-size: 12px; margin-top: 8px; white-space: pre-line; }
+  #info { position: absolute; right: 10px; top: 10px; background: rgba(22,23,20,.92); border: 1px solid #34352f; border-radius: 8px; padding: 10px 12px; max-width: 340px; display: none; }
+  #info h2 { margin: 0 0 6px; font: 600 15px Georgia, serif; color: #e0b354; }
+  #info button { margin: 4px 4px 0 0; background: #23241f; color: #e4e1d6; border: 1px solid #34352f; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row input[type=checkbox] { margin: 0; }
+</style>
+</head>
+<body>
+<canvas id="gl" tabindex="0"></canvas>
+<div id="panel">
+  <h1>Ultima IX</h1>
+  <label for="map">Map</label>
+  <select id="map"></select>
+  <label>Show</label>
+  <div class="row"><input type="checkbox" id="models" checked><span>Objects</span>
+    <input type="checkbox" id="water" checked><span>Water</span></div>
+  <label for="dist">Draw distance <span id="distv"></span></label>
+  <input type="range" id="dist" min="32" max="1024" value="256">
+  <div id="status">Loading…</div>
+  <div id="help">Drag: look · WASD: move · Q/E: down/up · Shift: faster · wheel: speed · T: top-down · click: what is there</div>
+</div>
+<div id="info"></div>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>

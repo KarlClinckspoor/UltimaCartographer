@@ -1,4 +1,4 @@
-// Ultima VII (Serpent Isle; Black Gate later): reads the game's STATIC folder and writes what the site
+// Ultima VII (Serpent Isle and The Black Gate): reads the game's STATIC folder and writes what the site
 // needs to data/<id>/: the map as the game stores it (U7MAP superchunks of U7CHUNKS chunks), the fixed
 // (U7IFIX) and movable (INITGAME.DAT u7ireg) objects as compact records, and only the shape frames the
 // map uses, packed into atlas pages.
@@ -143,7 +143,7 @@ const npcs = [];
 // schedule.dat (INITGAME.DAT): NPC count (the Avatar not counted), word offsets, then 4-byte entries:
 // period (3 hours) | activity << 3, x, y in the superchunk, superchunk (Exult readnpcs.cc, Schedule_change::set4).
 {
-  const b = files['schedule.dat'], cnt = b.readUInt32LE(0), off = i => b.readUInt16LE(4 + i * 2), base = 4 + cnt * 2;
+  const b = files['schedule.dat'] || file('SCHEDULE.DAT'), cnt = b.readUInt32LE(0), off = i => b.readUInt16LE(4 + i * 2), base = 4 + cnt * 2;
   for (const npc of npcs) {
     const i = npc.n;
     if (i < 1 || i > cnt) continue;

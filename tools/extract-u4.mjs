@@ -111,6 +111,17 @@ const EGA = ['000000', '0000aa', '00aa00', '00aaaa', 'aa0000', 'aa00aa', 'aa5500
   }
   writeFileSync(join(out, 'tiles.png'), png(w, h, px));
 }
+// CHARSET.EGA: the game loads its first 4096 bytes, 128 characters of 8 x 8, 4 bits a pixel (left pixel in the
+// high nibble, as SHAPES.EGA); the dungeon gem view prints these (U4_PEER.C ShowDungeonMap).
+{
+  const cs = file('CHARSET.EGA'), w = 16 * 8, h = 8 * 8, px = Buffer.alloc(w * h * 3);
+  for (let c = 0; c < 128; c++) for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const b = cs[c * 32 + y * 4 + (x >> 1)], v = x & 1 ? b & 15 : b >> 4;
+    const o = ((Math.floor(c / 16) * 8 + y) * w + (c % 16) * 8 + x) * 3;
+    [px[o], px[o + 1], px[o + 2]] = EGA[v];
+  }
+  writeFileSync(join(out, 'charset.png'), png(w, h, px));
+}
 
 writeFileSync(join(out, 'u4.json'), JSON.stringify({world: world.toString('base64'), towns, talk, dungeons, tileNames, places, moongates, virtues, mantras, shopRows, shops}));
 console.log(`world 256x256, towns ${Object.keys(towns).length}, talk ${Object.keys(talk).length}, dungeons ${Object.keys(dungeons).length}, tiles 256 -> ${out}`);

@@ -34,7 +34,10 @@ block ES modules over `file://`.)
 | `js/games/u4/index.js` | Ultima IV's maps: Britannia, 16 castles, townes and villages (and LB's upper floor), 8 dungeons × 8 levels and their rooms |
 | `js/games/u5/index.js` | Ultima V's maps: Britannia, the Underworld, 32 settlements floor by floor, 8 dungeons × 8 levels and their rooms |
 | `js/games/u6/engine.js` | The Ultima VI engine's maps (Ultima VI, The Savage Empire, Martian Dreams): drawn in the browser a grid tile at a time from the game's chunk map, objects and people |
-| `js/games/u7si/index.js` | Serpent Isle: the 3072 × 3072-tile world drawn as you pan, with a height cutoff and people by the hour |
+| `js/games/u7/engine.js` | The Ultima VII engine's world (The Black Gate, Serpent Isle): 3072 × 3072 tiles drawn as you pan, with a height cutoff and people by the hour |
+| `js/games/u7bg/`, `js/games/u7si/` | Each game's name for the engine |
+| `js/games/u8/index.js` | Ultima VIII: the 45 maps that have items, drawn as you pan from u8edit's web export, with a roof cut, teleport links and a graph of how the maps connect |
+| `data/u8/` | Written by u8edit (`--export-web`, see `docs/u8-export.md`); checked by `tools/check-u8-export.mjs` |
 | `js/games/u6/`, `js/games/se/`, `js/games/md/` | Each game's tables for the engine (level names, entrances, readable objects) |
 | `data/u3/`, `data/u4/`, `data/u5/` | Extracted by `tools/extract-u3.mjs`, `tools/extract-u4.mjs` and `tools/extract-u5.mjs` |
 | `js/lib/draw.js` | Drawing helpers shared by game modules (U2 onwards) |
@@ -62,7 +65,14 @@ only if the extractor changes:
     node tools/extract-u6.mjs u6 "C:/GOG Games/Ultima 6" ../u6-decompiled/dialogue.json
     node tools/extract-u6.mjs se "C:/GOG Games/The Savage Empire/SAVAGE" ../u6se-decompiled/dialogue.json
     node tools/extract-u6.mjs md "C:/GOG Games/Martian Dreams/MARTIAN" ../u6md-decompiled/dialogue.json
+    node tools/extract-u7.mjs u7bg "C:/GOG Games/Ultima 7/STATIC"
     node tools/extract-u7.mjs u7si "C:/GOG Games/Ultima 7 - Serpent Isle/STATIC"
+
+Ultima VIII is baked by u8edit (the editor in `../U8/Ultima8_Decomp`), not by a script here. From Git
+Bash (keep the redirect: u8edit is a GUI program and its report is lost without it):
+
+    "../U8/Ultima8_Decomp/build/editor/u8edit.exe" --data "../U8/gamedata/ENGLISH"       --export-web "$(pwd)/data/u8" > u8-export-report.txt 2>&1
+    node tools/check-u8-export.mjs
 
 Ultima IV reads its game data from the GOG folder and the tables the game keeps in code (tile
 names, place names and squares, moongates, mantras, shop names and counter rows) from the port's C
@@ -103,6 +113,14 @@ Britannia leads to a ladder whose way back returns to the same square.
 - Read from the code and checked against `akmap.py`, but not yet confirmed in DOSBox.
 - Monster squares depend on the square you arrive on. Arriving by ladder always gives the same
   squares; the "Arrive on this square" action covers amulet ladders.
+
+## Dungeon levels drawn as the gem view
+
+Ultima III, IV and V's dungeon levels are drawn the way each game's own map of a level looks: what Peer at a gem
+(or Vieda, or the View spell) shows, glyph for glyph, from the game's fonts (U3 `CHARSET.ULT`, U4 `CHARSET.EGA`, U5
+`IBM.CH` and `RUNES.CH` with the fountain and field pictures) as the decompiled `ShowDungeonMap` / `DrawViewCell`
+pick them. What the gem view leaves out (room numbers, U4's waiting monsters, what U3's "?" squares are) is added
+as small labels in a corner of the cell.
 
 ## Ultima I notes
 
@@ -166,7 +184,11 @@ Britannia leads to a ladder whose way back returns to the same square.
 - Ultima VI labels the dungeon and shrine entrances with the names Shamino gives them.
 - Dungeon maps that wrap show arrows at their edges.
 
-## Ultima VII: Serpent Isle notes
+## Ultima VII: The Black Gate and Serpent Isle notes
+
+- Both games use the same engine and formats, so one extractor and one viewer serve both. Black
+  Gate keeps SCHEDULE.DAT in STATIC instead of inside INITGAME.DAT. Its world is 67,003 objects and
+  6,201 frames in one atlas page, about 4 MB.
 
 - PC/GOG version. The map is kept as the game keeps it: U7MAP (144 superchunks of chunk numbers)
   and U7CHUNKS (3072 reusable 16 × 16-tile chunks), plus the fixed (U7IFIX) and movable
@@ -179,6 +201,20 @@ Britannia leads to a ladder whose way back returns to the same square.
   (3-hour periods); their popups list their day with buttons to follow them.
 - The draw order is simple (lift, then distance), so some overlaps differ from the game. Formats
   as Exult reads them (gamemap.cc, actorio.cc, readnpcs.cc, shapes/vgafile.cc).
+
+## Ultima VIII notes
+
+- PC version, as a new game starts (`SAVEGAME/U8SAVE.000`). u8edit does the hard parts and bakes them
+  (`docs/u8-export.md`): items in the game's draw order (`DL_ItemNode::compare`), in screen pixels,
+  with globs expanded and look names. The browser walks the list for each tile and places frames from
+  two atlas pages; one map unit is one screen pixel. About 16 MB for all 45 maps.
+- Roof cut: items at that height or above are hidden unless the game always draws them, as u8edit
+  does it. Around 60 takes the caps off the mushroom trees; 255 shows everything.
+- Amber dots start a teleport (egg or usecode) and link to where it leads; blue rings are where they
+  arrive. Eggs and triggers the game never draws can be shown with their layer. Translucent shapes
+  are drawn at 60%, as u8edit draws them.
+- "How the maps connect" is u8edit's Transitions view: every map at the position u8edit keeps, an
+  arrow for each way between two. Map names are kept in the module (`NAMES`) until u8edit sets them; a name from u8edit wins. Maps without a name are unused or unfinished ones the game never sends you to: they are listed apart, under "Unused and unfinished", and grey in the graph.
 
 ## Credits
 

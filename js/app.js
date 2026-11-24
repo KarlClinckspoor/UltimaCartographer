@@ -19,7 +19,9 @@
 //                                       toggleable parts in elements with data-layer="<layer id>"
 //     layers: [{id, name, swatch, on?}],
 //     features: [{name, x, y, detail?}], what search finds
-//     cell(x, y) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}]} | null
+//     cell(x, y) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}], box?: [x, y, w, h]} | null
+//                                       box: what to outline instead of the square (e.g. an item's picture)
+//     hover,                            false: no square follows the pointer (maps where a square is a pixel)
 //     info,                             html for the side panel
 //     draw(canvas, x0, y0, span, off),  for maps too big for images: draws squares x0..x0+span,
 //                                       y0..y0+span into a 256-pixel canvas (may return a Promise);
@@ -310,8 +312,9 @@ function cellAt(latlng) {
 
 function openCell(x, y, pan) {
   const c = view.cell(x, y);
-  selRect.setBounds(cellBounds(x, y)).addTo(map);
-  if (pan && !map.getBounds().contains(cellBounds(x, y))) map.panTo(toLatLng(x + .5, y + .5));
+  const box = c?.box ? L.latLngBounds(toLatLng(c.box[0], c.box[1] + c.box[3]), toLatLng(c.box[0] + c.box[2], c.box[1])) : cellBounds(x, y);
+  selRect.setBounds(box).addTo(map);
+  if (pan && !map.getBounds().contains(box)) map.panTo(box.getCenter());
   if (!c) return;
   const links = c.links || [];
   const html = `<h4>${esc(c.title)}</h4>${c.body || ''}<p class="xy">x ${x}, y ${y}</p>` +
@@ -325,7 +328,7 @@ function openCell(x, y, pan) {
 
 map.on('mousemove', e => {
   const c = cellAt(e.latlng);
-  if (c) { hoverRect.setBounds(cellBounds(c[0], c[1])).addTo(map); readout.set(`x ${c[0]}, y ${c[1]}`); }
+  if (c) { if (view.hover !== false) hoverRect.setBounds(cellBounds(c[0], c[1])).addTo(map); readout.set(`x ${c[0]}, y ${c[1]}`); }
   else { hoverRect.remove(); readout.set('—'); }
 });
 map.on('click', e => { const c = cellAt(e.latlng); if (c) openCell(c[0], c[1], false); });

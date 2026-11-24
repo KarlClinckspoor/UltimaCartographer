@@ -54,6 +54,17 @@ const EGA = ['000000', '0000aa', '00aa00', '00aaaa', 'aa0000', 'aa00aa', 'aa5500
   }
   writeFileSync(join(out, 'tiles.png'), png(w, h, px));
 }
+// IBM.CH and RUNES.CH: 128 characters of 8 x 8, 1 bit a pixel, bit 7 the left; written white on transparent
+// (the game tints them with the text colour). The dungeon View prints from both (dnglook.c DrawViewCell).
+for (const [name, fname] of [['IBM.CH', 'font0.png'], ['RUNES.CH', 'font1.png']]) {
+  const cs = file(name), w = 16 * 8, h = 8 * 8, px = Buffer.alloc(w * h * 4);
+  for (let c = 0; c < 128; c++) for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    if (!((cs[c * 8 + y] >> (7 - x)) & 1)) continue;
+    const o = ((Math.floor(c / 16) * 8 + y) * w + (c % 16) * 8 + x) * 4;
+    px[o] = px[o + 1] = px[o + 2] = px[o + 3] = 255;
+  }
+  writeFileSync(join(out, fname), png(w, h, px, 4));
+}
 
 // ---------- Britannia (BRIT.DAT holds only the chunks not all water; DATA.OVL 0x3886 says which) and the Underworld ----------
 function bigMap(dat, index) {

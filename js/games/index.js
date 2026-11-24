@@ -8,7 +8,9 @@ import u5 from './u5/index.js';
 import u6 from './u6/index.js';
 import se from './se/index.js';
 import md from './md/index.js';
+import u7bg from './u7bg/index.js';
 import u7si from './u7si/index.js';
+import u8 from './u8/index.js';
 
 export const GAMES = [
   u0,
@@ -20,6 +22,7 @@ export const GAMES = [
   u6,
   se,
   md,
+  u7bg,
   u7si,
-  {id: 'u8', title: 'Ultima VIII'},
+  u8,
 ];

@@ -3,3 +3,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 node_modules/
+
+# baked by the U9 editor (u9 export-web); not committed until its size is known
+u9viewer/data/

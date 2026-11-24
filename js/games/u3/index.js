@@ -40,7 +40,8 @@ const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441
 
 let loading = null;
 const load = () => loading ||= (async () => {
-  const [d, tiles] = await Promise.all([json(new URL('u3.json', DATA), 'run tools/extract-u3.mjs'), image(new URL('tiles.png', DATA))]);
+  const [d, tiles, charset] = await Promise.all([json(new URL('u3.json', DATA), 'run tools/extract-u3.mjs'), image(new URL('tiles.png', DATA)), image(new URL('charset.png', DATA))]);
+  d.charset = charset;
   for (const m of Object.values(d.maps)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
   for (const m of Object.values(d.dungeons)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
   d.tiles = tiles; d.png = {};
@@ -203,6 +204,11 @@ const glyph = {
   start: (x, y) => `<rect x="${x + .05}" y="${y + .05}" width=".9" height=".9" fill="none" stroke="#ffffff" stroke-width=".05" stroke-dasharray=".1 .07" rx=".1"/>`,
 };
 
+// view.c ShowDungeonMap (Peer at a gem): the CHARSET.ULT character printed for each cell value
+const gemChar = c => c === 0xC0 ? 1 : c === 0xA0 ? 2 : c === 0x80 ? 3 : c === 0x30 ? 4 : c === 0x20 ? 5 : c === 0x10 ? 6 : c === 0 ? 0 : 0x3F;
+// a small label in a cell's corner, leaving the gem glyph visible
+const badge = (x, y, text, color) => `<rect x="${x + .02}" y="${y + .02}" width="${.14 + .17 * String(text).length}" height=".34" rx=".06" fill="#000" opacity=".8"/><text x="${x + .09}" y="${y + .29}" font-size=".3" font-family="system-ui, sans-serif" font-weight="700" fill="${color}">${esc(String(text))}</text>`;
+
 function eventNote(n, x, msg) {
   switch (n) {
     case 1: return 'The Time Lord: “The one way is Love, Sol, Moons & Death, all else fails.”';
@@ -219,20 +225,20 @@ function eventNote(n, x, msg) {
 function renderLevel(d, key, L) {
   const dn = DUNGEONS.find(r => r[0] === key), m = d.dungeons[key];
   const cells = m.bytes.subarray((L - 1) * 256, L * 256), at = (x, y) => cells[y * 16 + x];
-  const parts = {base: '', doors: '', secret: '', chests: '', ladders: '', events: ''};
+  // the level as the gem view prints it: one CHARSET.ULT character a cell, '?' for what it has no sign for
+  const gem = canvas(128, 128), gctx = gem.getContext('2d');
+  const parts = {marks: ''};
   const features = [];
   let chests = 0;
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     const c = at(x, y);
-    parts.base += c >= 0x80 && c < 0xC0 ? glyph.wall(x, y) : rect(x, y, 1, 1, C.floor);   // walls and secret doors look the same
-    if (c >= 0xC0) parts.doors += glyph.door(x, y);
-    if (c === 0xA0) { parts.secret += glyph.secret(x, y); features.push({name: 'Secret door', x, y}); }
-    if (c === 0x40) { parts.chests += glyph.chest(x, y); chests++; }
-    if (c < 0x80 && c & 0x30) { parts.ladders += glyph.ladder(x, y, c & 0x10, c & 0x20); features.unshift({name: c === 0x30 ? 'Ladder up and down' : c & 0x10 ? 'Ladder up' : 'Ladder down', x, y}); }
-    if (c >= 1 && c <= 8 && c !== 7) { parts.events += glyph.event(x, y, c); features.push({name: c === 2 ? `Fountain (${['poison', 'heal', 'harm', 'cure'][x & 3]})` : c === 5 ? `Rod: Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}` : EVENTS[c], x, y}); }
+    blit(gctx, d.charset, 8, gemChar(c), x, y);
+    if (c === 0xA0) features.push({name: 'Secret door', x, y});
+    if (c === 0x40) { parts.marks += badge(x, y, 'C', C.chest); chests++; features.push({name: 'Chest', x, y}); }
+    if (c < 0x80 && c & 0x30) features.unshift({name: c === 0x30 ? 'Ladder up and down' : c & 0x10 ? 'Ladder up' : 'Ladder down', x, y});
+    if (c >= 1 && c <= 8 && c !== 7) { parts.marks += badge(x, y, {1: 'T', 2: 'F', 3: 'W', 4: 'X', 5: 'R', 6: 'G', 8: 'M'}[c], C.event); features.push({name: c === 2 ? `Fountain (${['poison', 'heal', 'harm', 'cure'][x & 3]})` : c === 5 ? `Rod: Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}` : EVENTS[c], x, y}); }
   }
-  const svg = svgDoc(16, 16, parts.base + Object.entries(parts).filter(([k]) => k !== 'base').map(([k, v]) => g(k, v)).join('') +
-    g('grid', gridLines(16, 16)) + (L === 1 ? g('start', glyph.start(1, 1)) : ''));
+  const svg = svgDoc(16, 16, g('marks', parts.marks) + g('grid', gridLines(16, 16)) + (L === 1 ? g('start', glyph.start(1, 1)) : ''));
   const id = l => `${key}-${l}`;
   const cell = (x, y) => {
     const c = at(x, y), links = [];
@@ -252,15 +258,13 @@ function renderLevel(d, key, L) {
   const info = `<h3>${esc(dn[1])}, level ${L}</h3>
     <p>Misty writing: “${esc(m.messages[L - 1])}”</p>
     <p>${chests} chest${chests === 1 ? '' : 's'}. Encounters: ${((L + 1) / 256 * 100).toFixed(1)}% a turn on a floor square, from ${kinds.join(', ')}; the party’s square becomes a chest before the fight.</p>
+    <p>Drawn as the gem view (Peer at a gem, or Vieda) draws it, signs from the game’s own font; it prints “?” for chests and the special squares, so letters say what each is: C chest, F fountain, R rod, T Time Lord, W wind, X trap, G gremlins, M misty writing.</p>
     <p class="muted">Fixed in the game file, the same for everyone. Every level wraps at its edges. Light is only for the view: you can move and fight in the dark.</p>`;
   return {
-    title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, wrap: true, svg, cell, features, info,
+    title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, wrap: true, native: 8, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [
-      {id: 'doors', name: 'Doors', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.door(0, 0))},
-      {id: 'secret', name: 'Secret doors', swatch: swatch(rect(0, 0, 1, 1, C.wall) + glyph.secret(0, 0))},
-      {id: 'chests', name: 'Chests', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.chest(0, 0))},
-      {id: 'ladders', name: 'Ladders', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.ladder(0, 0, true, false))},
-      {id: 'events', name: 'Fountains, rods, traps …', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.event(0, 0, 2))},
+      {id: 'gem', name: 'Gem view'},
+      {id: 'marks', name: 'What the “?” squares are', swatch: swatch(badge(.2, .3, 'F', C.event))},
       ...(L === 1 ? [{id: 'start', name: 'Where you arrive', swatch: swatch(rect(0, 0, 1, 1, C.floor) + glyph.start(0, 0))}] : []),
       {id: 'grid', name: 'Grid', swatch: swatch(rect(0, 0, 1, 1, C.floor) + path('M.5 0V1M0 .5H1', '#888', .06))},
     ],

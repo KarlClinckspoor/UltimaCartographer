@@ -1,0 +1,562 @@
+{
+    "atlas": [
+        {
+            "file": "atlas-0.png",
+            "height": 2048,
+            "width": 2048
+        },
+        {
+            "file": "atlas-1.png",
+            "height": 886,
+            "width": 2048
+        }
+    ],
+    "format": "u8web",
+    "frames": 3447,
+    "maps": [
+        {
+            "bounds": {
+                "maxX": 642,
+                "maxY": 927,
+                "minX": -26,
+                "minY": -66
+            },
+            "drawn": 3,
+            "id": 0,
+            "info": 3,
+            "items": 3
+        },
+        {
+            "bounds": {
+                "maxX": 6527,
+                "maxY": 4667,
+                "minX": -2175,
+                "minY": -124
+            },
+            "drawn": 19905,
+            "id": 3,
+            "info": 244,
+            "items": 20911
+        },
+        {
+            "bounds": {
+                "maxX": 4223,
+                "maxY": 6655,
+                "minX": -5887,
+                "minY": -97
+            },
+            "drawn": 35657,
+            "id": 4,
+            "info": 575,
+            "items": 37895
+        },
+        {
+            "bounds": {
+                "maxX": 1154,
+                "maxY": 5143,
+                "minX": -7304,
+                "minY": 1332
+            },
+            "drawn": 19721,
+            "id": 5,
+            "info": 167,
+            "items": 20601
+        },
+        {
+            "bounds": {
+                "maxX": -1025,
+                "maxY": 6783,
+                "minX": -7937,
+                "minY": 2775
+            },
+            "drawn": 19939,
+            "id": 6,
+            "info": 606,
+            "items": 20903
+        },
+        {
+            "bounds": {
+                "maxX": 1232,
+                "maxY": 6543,
+                "minX": -8063,
+                "minY": 1743
+            },
+            "drawn": 23110,
+            "id": 7,
+            "info": 247,
+            "items": 24352
+        },
+        {
+            "bounds": {
+                "maxX": 4993,
+                "maxY": 7807,
+                "minX": -4351,
+                "minY": -1
+            },
+            "drawn": 27295,
+            "id": 8,
+            "info": 888,
+            "items": 30171
+        },
+        {
+            "bounds": {
+                "maxX": 3199,
+                "maxY": 6527,
+                "minX": -4353,
+                "minY": 2303
+            },
+            "drawn": 21473,
+            "id": 12,
+            "info": 329,
+            "items": 22843
+        },
+        {
+            "bounds": {
+                "maxX": 4097,
+                "maxY": 7159,
+                "minX": -4609,
+                "minY": 566
+            },
+            "drawn": 18507,
+            "id": 14,
+            "info": 904,
+            "items": 21886
+        },
+        {
+            "bounds": {
+                "maxX": 2303,
+                "maxY": 4327,
+                "minX": -4479,
+                "minY": 1343
+            },
+            "drawn": 7545,
+            "id": 15,
+            "info": 228,
+            "items": 8147
+        },
+        {
+            "bounds": {
+                "maxX": 4353,
+                "maxY": 6583,
+                "minX": -5119,
+                "minY": 1951
+            },
+            "drawn": 12338,
+            "id": 16,
+            "info": 58,
+            "items": 13482
+        },
+        {
+            "bounds": {
+                "maxX": 895,
+                "maxY": 5055,
+                "minX": -7807,
+                "minY": 143
+            },
+            "drawn": 10464,
+            "id": 20,
+            "info": 0,
+            "items": 11031
+        },
+        {
+            "bounds": {
+                "maxX": 2559,
+                "maxY": 3327,
+                "minX": -4063,
+                "minY": 335
+            },
+            "drawn": 10109,
+            "id": 21,
+            "info": 246,
+            "items": 10619
+        },
+        {
+            "bounds": {
+                "maxX": 385,
+                "maxY": 6783,
+                "minX": -3969,
+                "minY": 3783
+            },
+            "drawn": 5486,
+            "id": 24,
+            "info": 2,
+            "items": 6092
+        },
+        {
+            "bounds": {
+                "maxX": 513,
+                "maxY": 7167,
+                "minX": -4865,
+                "minY": 3783
+            },
+            "drawn": 7406,
+            "id": 25,
+            "info": 3,
+            "items": 8278
+        },
+        {
+            "bounds": {
+                "maxX": 4225,
+                "maxY": 6327,
+                "minX": -823,
+                "minY": 2614
+            },
+            "drawn": 9795,
+            "id": 26,
+            "info": 64,
+            "items": 10964
+        },
+        {
+            "bounds": {
+                "maxX": 3929,
+                "maxY": 3591,
+                "minX": -3713,
+                "minY": 582
+            },
+            "drawn": 13882,
+            "id": 28,
+            "info": 174,
+            "items": 15612
+        },
+        {
+            "bounds": {
+                "maxX": 1535,
+                "maxY": 2815,
+                "minX": -1665,
+                "minY": -1
+            },
+            "drawn": 2850,
+            "id": 29,
+            "info": 0,
+            "items": 2980
+        },
+        {
+            "bounds": {
+                "maxX": 4223,
+                "maxY": 7999,
+                "minX": -2817,
+                "minY": -2
+            },
+            "drawn": 23269,
+            "id": 31,
+            "info": 607,
+            "items": 26922
+        },
+        {
+            "bounds": {
+                "maxX": -2977,
+                "maxY": 5051,
+                "minX": -5160,
+                "minY": 4415
+            },
+            "drawn": 131,
+            "id": 33,
+            "info": 0,
+            "items": 131
+        },
+        {
+            "bounds": {
+                "maxX": 4481,
+                "maxY": 7615,
+                "minX": -3073,
+                "minY": 126
+            },
+            "drawn": 29986,
+            "id": 37,
+            "info": 514,
+            "items": 32816
+        },
+        {
+            "bounds": {
+                "maxX": 5247,
+                "maxY": 5071,
+                "minX": -4507,
+                "minY": 1230
+            },
+            "drawn": 28892,
+            "id": 39,
+            "info": 732,
+            "items": 30371
+        },
+        {
+            "bounds": {
+                "maxX": 3839,
+                "maxY": 4175,
+                "minX": -1791,
+                "minY": 382
+            },
+            "drawn": 18084,
+            "id": 40,
+            "info": 696,
+            "items": 19144
+        },
+        {
+            "bounds": {
+                "maxX": 5647,
+                "maxY": 5823,
+                "minX": -2592,
+                "minY": 1055
+            },
+            "drawn": 30624,
+            "id": 41,
+            "info": 1003,
+            "items": 31907
+        },
+        {
+            "bounds": {
+                "maxX": 1409,
+                "maxY": 5431,
+                "minX": -1665,
+                "minY": 3190
+            },
+            "drawn": 3022,
+            "id": 43,
+            "info": 19,
+            "items": 3417
+        },
+        {
+            "bounds": {
+                "maxX": 5503,
+                "maxY": 7991,
+                "minX": -2431,
+                "minY": 3223
+            },
+            "drawn": 17747,
+            "id": 44,
+            "info": 240,
+            "items": 18755
+        },
+        {
+            "bounds": {
+                "maxX": 4735,
+                "maxY": 7691,
+                "minX": -2687,
+                "minY": 1855
+            },
+            "drawn": 12383,
+            "id": 45,
+            "info": 59,
+            "items": 13156
+        },
+        {
+            "bounds": {
+                "maxX": 4223,
+                "maxY": 3391,
+                "minX": 129,
+                "minY": 1343
+            },
+            "drawn": 4219,
+            "id": 46,
+            "info": 49,
+            "items": 4464
+        },
+        {
+            "bounds": {
+                "maxX": 5503,
+                "maxY": 5215,
+                "minX": -3585,
+                "minY": -58
+            },
+            "drawn": 20568,
+            "id": 47,
+            "info": 259,
+            "items": 24043
+        },
+        {
+            "bounds": {
+                "maxX": 6145,
+                "maxY": 7807,
+                "minX": -2689,
+                "minY": 2011
+            },
+            "drawn": 18821,
+            "id": 49,
+            "info": 766,
+            "items": 21309
+        },
+        {
+            "bounds": {
+                "maxX": 6015,
+                "maxY": 7679,
+                "minX": -3103,
+                "minY": -73
+            },
+            "drawn": 23436,
+            "id": 50,
+            "info": 1069,
+            "items": 25694
+        },
+        {
+            "bounds": {
+                "maxX": 6911,
+                "maxY": 5407,
+                "minX": -1087,
+                "minY": 359
+            },
+            "drawn": 16777,
+            "id": 51,
+            "info": 564,
+            "items": 18346
+        },
+        {
+            "bounds": {
+                "maxX": 4095,
+                "maxY": 4855,
+                "minX": -1055,
+                "minY": 1079
+            },
+            "drawn": 15488,
+            "id": 54,
+            "info": 205,
+            "items": 18032
+        },
+        {
+            "bounds": {
+                "maxX": -48,
+                "maxY": 204,
+                "minX": -86,
+                "minY": 146
+            },
+            "drawn": 1,
+            "id": 55,
+            "info": 1,
+            "items": 1
+        },
+        {
+            "bounds": {
+                "maxX": 4351,
+                "maxY": 3431,
+                "minX": 1537,
+                "minY": 1999
+            },
+            "drawn": 2132,
+            "id": 56,
+            "info": 1,
+            "items": 2262
+        },
+        {
+            "bounds": {
+                "maxX": 3969,
+                "maxY": 7999,
+                "minX": -2945,
+                "minY": 2110
+            },
+            "drawn": 22338,
+            "id": 57,
+            "info": 376,
+            "items": 25822
+        },
+        {
+            "bounds": {
+                "maxX": 7425,
+                "maxY": 8095,
+                "minX": -6785,
+                "minY": -1
+            },
+            "drawn": 32749,
+            "id": 62,
+            "info": 349,
+            "items": 37659
+        },
+        {
+            "bounds": {
+                "maxX": 2561,
+                "maxY": 4735,
+                "minX": -1537,
+                "minY": 2686
+            },
+            "drawn": 3435,
+            "id": 63,
+            "info": 116,
+            "items": 3830
+        },
+        {
+            "bounds": {
+                "maxX": 128,
+                "maxY": 4415,
+                "minX": -6911,
+                "minY": 103
+            },
+            "drawn": 41,
+            "id": 159,
+            "info": 0,
+            "items": 43
+        },
+        {
+            "bounds": {
+                "maxX": 767,
+                "maxY": 767,
+                "minX": -767,
+                "minY": -41
+            },
+            "drawn": 625,
+            "id": 200,
+            "info": 1,
+            "items": 661
+        },
+        {
+            "bounds": {
+                "maxX": 1151,
+                "maxY": 7871,
+                "minX": -1151,
+                "minY": -125
+            },
+            "drawn": 1535,
+            "id": 222,
+            "info": 0,
+            "items": 1609
+        },
+        {
+            "bounds": {
+                "maxX": 8193,
+                "maxY": 8191,
+                "minX": -8194,
+                "minY": 127
+            },
+            "drawn": 25933,
+            "id": 223,
+            "info": 3,
+            "items": 27121
+        },
+        {
+            "bounds": {
+                "maxX": -319,
+                "maxY": 695,
+                "minX": -320,
+                "minY": 694
+            },
+            "drawn": 1,
+            "id": 236,
+            "info": 0,
+            "items": 1
+        },
+        {
+            "bounds": {
+                "maxX": 351,
+                "maxY": 3903,
+                "minX": -127,
+                "minY": 3571
+            },
+            "drawn": 75,
+            "id": 243,
+            "info": 1,
+            "items": 78
+        },
+        {
+            "bounds": {
+                "maxX": 3583,
+                "maxY": 2871,
+                "minX": -2175,
+                "minY": -9
+            },
+            "drawn": 7623,
+            "id": 255,
+            "info": 6,
+            "items": 8103
+        }
+    ],
+    "save": "U8SAVE.000",
+    "shapes": 757,
+    "transitions": 126,
+    "version": 1
+}
