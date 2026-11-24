@@ -69,7 +69,7 @@ const signHTML = s => `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>
 // The sextant's reading (cast2.c CAST2_06ec: the sextant, outdoors in Britannia at night, and In Wis): latitude from y, longitude from x, each as two letters, the high
 // and low nibble, A for 0;
 // the game prints them in runes.
-const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
+export const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderBig(d, under) {
   const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
   const images = await gridImages(d, under ? 'under' : 'brit', bytes, W, W, 32);
