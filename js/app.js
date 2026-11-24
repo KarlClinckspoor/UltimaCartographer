@@ -7,7 +7,9 @@
 //             file?: {label, accept, read(ArrayBuffer) -> value (throws an Error with a message)}}]
 //   transient: ['key']             params dropped when changing map unless a link sets them
 //   defaultMap
-//   maps(params, mapId) -> [{id, name, group?, title?}]   groups show as collapsible lists
+//   maps(params, mapId) -> [{id, name, group?, title?, href?}]   groups show as collapsible lists; href: a link to
+//                                       another page (a 3D view) instead of a map
+//   href                            instead of all the above: the game is a page of its own, opened when chosen
 //   render(mapId, params) -> view, or a Promise of one:
 //   view = {
 //     title, subtitle, width, height,   size in game squares; square (x, y) spans x..x+1, y..y+1
@@ -212,8 +214,12 @@ async function show({focus, initialView, keepView} = {}) {
 
 function drawGames() {
   const sel = $('#game');
-  sel.innerHTML = GAMES.map(g => `<option value="${g.id}" ${g.render ? '' : 'disabled'}>${esc(g.title)}${g.render ? '' : ' (coming)'}</option>`).join('');
-  sel.onchange = () => go({game: GAMES.find(g => g.id === sel.value)});
+  sel.innerHTML = GAMES.map(g => `<option value="${g.id}" ${g.render || g.href ? '' : 'disabled'}>${esc(g.title)}${g.render || g.href ? '' : ' (coming)'}</option>`).join('');
+  sel.onchange = () => {
+    const g = GAMES.find(x => x.id === sel.value);
+    if (g.href) { sel.value = state.game.id; location.href = g.href; return; }
+    go({game: g});
+  };
 }
 
 function drawPanel() {
@@ -255,7 +261,8 @@ function drawPanel() {
     if (!groups.length || groups.at(-1).name !== (m.group || '')) groups.push({name: m.group || '', maps: []});
     groups.at(-1).maps.push(m);
   }
-  const btn = m => `<button data-map="${esc(m.id)}" class="${m.id === mapId ? 'current' : ''}" title="${esc(m.title || m.name)}">${esc(m.name)}</button>`;
+  const btn = m => m.href ? `<a class="btn" href="${esc(m.href)}" title="${esc(m.title || m.name)}">${esc(m.name)}</a>`
+    : `<button data-map="${esc(m.id)}" class="${m.id === mapId ? 'current' : ''}" title="${esc(m.title || m.name)}">${esc(m.name)}</button>`;
   $('#maps').innerHTML = groups.map(g => g.name
     ? `<details ${g.maps.some(m => m.id === mapId) || groups.length <= 3 ? 'open' : ''}><summary>${esc(g.name)}</summary><div class="btns">${g.maps.map(btn).join('')}</div></details>`
     : `<div class="btns">${g.maps.map(btn).join('')}</div>`).join('');

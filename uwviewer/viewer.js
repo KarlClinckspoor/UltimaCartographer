@@ -252,10 +252,10 @@ function move() {
   const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
   const c = S.cam, k = S.keys, sp = S.speed * (k.has('ShiftLeft') || k.has('ShiftRight') ? 4 : 1) * dt;
   const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
-  if (k.has('KeyW')) { c.x += fx * sp; c.z += fz * sp; } if (k.has('KeyS')) { c.x -= fx * sp; c.z -= fz * sp; }
+  if (k.has('KeyW') || S.walk) { c.x += fx * sp; c.z += fz * sp; } if (k.has('KeyS')) { c.x -= fx * sp; c.z -= fz * sp; }
   if (k.has('KeyD')) { c.x += fz * sp; c.z -= fx * sp; } if (k.has('KeyA')) { c.x -= fz * sp; c.z += fx * sp; }
   if (k.has('KeyE')) c.y += sp; if (k.has('KeyQ')) c.y -= sp;
-  if (k.size) scheduleHash();
+  if (k.size || S.walk) scheduleHash();
 }
 addEventListener('keydown', e => {
   if (e.target.tagName === 'SELECT') return;
@@ -267,6 +267,11 @@ addEventListener('keydown', e => {
   S.keys.add(e.code);
 });
 addEventListener('keyup', e => S.keys.delete(e.code));
+// touch screens: the Walk button moves forward until pressed again; dragging turns. The panel folds away.
+$('#walk').onclick = () => { S.walk = !S.walk; $('#walk').classList.toggle('on', S.walk); $('#walk').textContent = S.walk ? '■ Stop' : '▲ Walk'; };
+$('#fold').onclick = () => { const f = $('#panel').classList.toggle('folded'); $('#fold').textContent = f ? '+' : '–'; };
+if (matchMedia('(max-width: 600px)').matches) $('#fold').onclick();   // a phone: start with the view, not the panel
+
 addEventListener('blur', () => S.keys.clear());
 let drag = null;
 canvas.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, moved: false}; canvas.setPointerCapture(e.pointerId); canvas.focus(); });

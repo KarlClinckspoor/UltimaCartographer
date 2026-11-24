@@ -1,4 +1,4 @@
-// Every game the site knows. A game without a module is listed but can't be opened yet.
+// Every game the site knows. A game without a module or a page is listed but can't be opened yet.
 import u0 from './u0/index.js';
 import u1 from './u1/index.js';
 import u2 from './u2/index.js';
@@ -14,6 +14,8 @@ import u8 from './u8/index.js';
 import uw1 from './uw1/index.js';
 import uw2 from './uw2/index.js';
 
+// In the order of the story (the canon timeline), not of release. A game with `href` is a page of its own (the 3D
+// viewers): choosing it opens that page.
 export const GAMES = [
   u0,
   u1,
@@ -24,9 +26,10 @@ export const GAMES = [
   u6,
   se,
   md,
+  uw1,
   u7bg,
+  uw2,
   u7si,
   u8,
-  uw1,
-  uw2,
+  {id: 'u9', title: 'Ultima IX: Ascension (3D)', href: 'u9viewer/'},
 ];

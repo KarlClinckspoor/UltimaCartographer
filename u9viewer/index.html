@@ -18,12 +18,21 @@
   #info button { margin: 4px 4px 0 0; background: #23241f; color: #e4e1d6; border: 1px solid #34352f; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row input[type=checkbox] { margin: 0; }
+  /* touch: drag to turn (no page scrolling on the canvas), a button to walk forward, a panel that folds away */
+  canvas { touch-action: none; }
+  #walk { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: none; font: 600 16px system-ui, sans-serif;
+    padding: 14px 26px; border-radius: 30px; background: rgba(22,23,20,.85); color: #e4e1d6; border: 2px solid #34352f; }
+  #walk.on { background: #e0b354; color: #1a1a14; border-color: #e0b354; }
+  @media (pointer: coarse) { #walk { display: block; } }
+  #fold { float: right; margin: -2px 0 0 8px; padding: 0 8px; font-size: 14px; line-height: 20px; }
+  #panel.folded > :not(h1) { display: none; }
+  @media (max-width: 600px) { #panel { width: auto; max-width: calc(100vw - 44px); } #info { width: auto; left: 10px; top: auto; bottom: 80px; max-height: 45vh; } }
 </style>
 </head>
 <body>
 <canvas id="gl" tabindex="0"></canvas>
 <div id="panel">
-  <h1>Ultima IX</h1>
+  <h1><button id="fold" title="Fold the panel">–</button><a href="../" title="Back to the Cartographer" style="color:inherit;text-decoration:none">Ultima IX</a></h1>
   <label for="map">Map</label>
   <select id="map"></select>
   <label>Show</label>
@@ -32,9 +41,10 @@
   <label for="dist">Draw distance <span id="distv"></span></label>
   <input type="range" id="dist" min="32" max="1024" value="256">
   <div id="status">Loading…</div>
-  <div id="help">Drag: look · WASD: move · Q/E: down/up · Shift: faster · wheel: speed · T: top-down · click: what is there</div>
+  <div id="help">Drag: look · WASD (or the Walk button on touch screens): move · Q/E: down/up · Shift: faster · wheel: speed · T: top-down · click: what is there</div>
 </div>
 <div id="info"></div>
+<button id="walk" title="Walk forward (drag to turn)">▲ Walk</button>
 <script type="module" src="viewer.js"></script>
 </body>
 </html>

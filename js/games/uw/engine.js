@@ -30,8 +30,8 @@ export function makeUW(cfg) {
     id: cfg.id, title: cfg.title, version: 'PC/GOG version, as a new game starts. Exported by the Underworld editor from the game files.',
     params: [], transient: [], defaultMap: 'L1',
     maps() {
-      const list = [];
-      if (!meta) return [{id: 'L1', name: 'Level 1'}];
+      const list = [{id: '3d', name: 'Open in 3D', href: `uwviewer/#${cfg.id}`, title: 'Fly through the levels in 3D'}];
+      if (!meta) return [...list, {id: 'L1', name: 'Level 1'}];
       for (const l of meta.levels) list.push({id: `L${l.id}`, name: l.realm ? nameOf(l.id).replace(`${l.realm} `, '') : String(l.id), title: l.name, group: l.realm || 'Levels'});
       return list;
     },
@@ -80,7 +80,7 @@ export function makeUW(cfg) {
         if (o.flags?.length) bits.push(`<span class="muted">${esc(o.flags.join(', '))}</span>`);
         return `<li><b>${esc(cap(o.name))}</b>${bits.length ? `<br>${bits.join('<br>')}` : ''}</li>`;
       };
-      const viewer = (tx, ty) => `../../uwviewer/#${cfg.id}/${id}/${tx + .5},${ty + .5}`;
+      const viewer = (tx, ty) => `uwviewer/#${cfg.id}/${id}/${tx + .5},${ty + .5}`;   // relative to the site's page
 
       const cell = (x, y) => {
         const tx = x, ty = 63 - y, t = tile(tx, ty), list = (onTile.get(ty * 64 + tx) || []).map(i => O[i]);

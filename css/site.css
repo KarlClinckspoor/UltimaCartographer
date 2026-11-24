@@ -42,11 +42,12 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1
 .param .row button { flex: none; }
 .param p { margin: 4px 0 0; }
 
-button.btn, label.btn, #maps button {
+button.btn, label.btn, #maps button, #maps a.btn {
   font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 10px; cursor: pointer;
 }
-button.btn:hover, label.btn:hover, #maps button:hover { border-color: var(--accent); }
+button.btn:hover, label.btn:hover, #maps button:hover, #maps a.btn:hover { border-color: var(--accent); }
+#maps a.btn { text-decoration: none; display: inline-block; }
 #maps .btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
 #maps details summary { cursor: pointer; padding: 4px 0; font-size: 13px; color: var(--muted); }
 #maps details summary:hover, #maps details[open] summary { color: var(--text); }

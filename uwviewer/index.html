@@ -22,12 +22,21 @@
   button { margin: 4px 4px 0 0; background: #23241f; color: #e4e1d6; border: 1px solid #34352f; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
   .row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
   .row label { display: flex; gap: 4px; align-items: center; margin: 0; color: #e4e1d6; font-size: 13px; }
+  /* touch: drag to turn (no page scrolling on the canvas), a button to walk forward, a panel that folds away */
+  canvas { touch-action: none; }
+  #walk { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: none; font: 600 16px system-ui, sans-serif;
+    padding: 14px 26px; border-radius: 30px; background: rgba(22,23,20,.85); color: #e4e1d6; border: 2px solid #34352f; }
+  #walk.on { background: #e0b354; color: #1a1a14; border-color: #e0b354; }
+  @media (pointer: coarse) { #walk { display: block; } }
+  #fold { float: right; margin: -2px 0 0 8px; padding: 0 8px; font-size: 14px; line-height: 20px; }
+  #panel.folded > :not(h1) { display: none; }
+  @media (max-width: 600px) { #panel { width: auto; max-width: calc(100vw - 44px); } #info { width: auto; left: 10px; top: auto; bottom: 80px; max-height: 45vh; } }
 </style>
 </head>
 <body>
 <canvas id="gl" tabindex="0"></canvas>
 <div id="panel">
-  <h1><a href="../" title="Back to the Cartographer">Ultima Underworld</a></h1>
+  <h1><button id="fold" title="Fold the panel">–</button><a href="../" title="Back to the Cartographer">Ultima Underworld</a></h1>
   <label for="game">Game</label>
   <select id="game"><option value="uw1">Ultima Underworld</option><option value="uw2">Ultima Underworld II</option></select>
   <label for="level">Level</label>
@@ -43,9 +52,10 @@
     <label><input type="checkbox" id="hidden">Hidden things</label>
   </div>
   <div id="status">Loading…</div>
-  <div id="help">Drag: look · WASD: move · Q/E: down/up · Shift: 4× faster · wheel or slider: speed · T: from above · click: what is there</div>
+  <div id="help">Drag: look · WASD (or the Walk button on touch screens): move · Q/E: down/up · Shift: 4× faster · wheel or slider: speed · T: from above · click: what is there</div>
 </div>
 <div id="info"></div>
+<button id="walk" title="Walk forward (drag to turn)">▲ Walk</button>
 <script type="module" src="viewer.js"></script>
 </body>
 </html>

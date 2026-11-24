@@ -142,11 +142,11 @@ return {
     return {
       title: cfg.world, subtitle: `${cfg.subtitle} · cutoff lift ${cut} · ${hh(hour)}`, width: N, height: N, native: 8, draw, cell, coords: cfg.coords,
       features: people.map(n => ({name: pname(n), x: n.px, y: n.py, detail: n.act != null ? ACT[n.act] : ''})),
-      svg: svgDoc(N, N, g('grid', `<path d="${Array.from({length: CH - 1}, (_, i) => `M${(i + 1) * 16} 0V${N}M0 ${(i + 1) * 16}H${N}`).join('')}" stroke="#fff" stroke-width=".5" opacity=".25" fill="none"/>`)),
+      svg: svgDoc(N, N, g('grid', `<path d="${Array.from({length: CH - 1}, (_, i) => `M${(i + 1) * 16} 0V${N}M0 ${(i + 1) * 16}H${N}`).join('')}" stroke="#fff" stroke-width=".5" opacity=".25" fill="none"/>`) + (cfg.overlay ? cfg.overlay.svg() : '')),
       info: `<h3>${cfg.world}</h3><p>3072 × 3072 tiles, drawn as you pan from the game’s chunk map (${d.map.length} chunk slots built from ${d.chunks.length / 256} reusable chunks) and its ${d.obj.x.length.toLocaleString()} objects as a new game starts.</p>
         <p>Height cutoff ${cut}: objects at lift ${cut} or higher are left out${cut <= 5 ? ', which takes the roofs off' : ''}. Click a square for every object on it and its lift.</p>
         <p class="muted">Draw order is a simple one (lift, then distance), so a few overlaps differ from the game.</p>`,
-      layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, {id: 'grid', name: 'Chunk grid', swatch: gridSwatch, on: false}],
+      layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, ...(cfg.overlay ? cfg.overlay.layers : []), {id: 'grid', name: 'Chunk grid', swatch: gridSwatch, on: false}],
     };
   },
 };
