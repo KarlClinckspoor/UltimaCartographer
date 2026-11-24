@@ -254,7 +254,9 @@ function move() {
   const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
   const c = S.cam, k = S.keys, sp = S.speed * (k.has('ShiftLeft') || k.has('ShiftRight') ? 4 : 1) * dt;
   const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
-  if (k.has('KeyW') || S.walk) { c.x += fx * sp; c.z += fz * sp; } if (k.has('KeyS')) { c.x -= fx * sp; c.z -= fz * sp; }
+  if (k.has('KeyW')) { c.x += fx * sp; c.z += fz * sp; } if (k.has('KeyS')) { c.x -= fx * sp; c.z -= fz * sp; }
+  // the Walk button goes where the camera looks, up and down too: touch screens have no Q/E
+  if (S.walk) { const cp = Math.cos(c.pitch); c.x += fx * cp * sp; c.y += Math.sin(c.pitch) * sp; c.z += fz * cp * sp; }
   if (k.has('KeyD')) { c.x += fz * sp; c.z -= fx * sp; } if (k.has('KeyA')) { c.x -= fz * sp; c.z += fx * sp; }
   if (k.has('KeyE')) c.y += sp; if (k.has('KeyQ')) c.y -= sp;
   if (k.size || S.walk) scheduleHash();

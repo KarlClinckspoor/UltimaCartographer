@@ -278,7 +278,7 @@ async function loadMap(id, place) {
   }
   map.links = await fetchJson(`maps/${id}/links.json`);
   fetchJson(`maps/${id}/objects.json`).then(j => { if (S.map === map) map.objJson = j; });
-  if (place) Object.assign(S.cam, place);
+  if (place) { Object.assign(S.cam, place); if (S.cam.y == null) S.cam.y = heightAt(S.cam.x, S.cam.z) + 20; }   // no height: above the ground
   else Object.assign(S.cam, {x: W / 2, z: H / 2, y: Math.max(60, W / 6), yaw: 0, pitch: -0.9});
   $('#map').value = id;
   writeHash();
@@ -391,10 +391,11 @@ function move() {
   const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
   const c = S.cam, k = S.keys, sp = S.speed * (k.has('ShiftLeft') || k.has('ShiftRight') ? 4 : 1) * dt;
   const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
-  if (k.has('KeyW') || S.walk) { c.x += fx * sp; c.z += fz * sp; } if (k.has('KeyS')) { c.x -= fx * sp; c.z -= fz * sp; }
+  if (k.has('KeyW')) { c.x += fx * sp; c.z += fz * sp; } if (k.has('KeyS')) { c.x -= fx * sp; c.z -= fz * sp; }
+  // the Walk button goes where the camera looks, up and down too: touch screens have no Q/E
+  if (S.walk) { const cp = Math.cos(c.pitch); c.x += fx * cp * sp; c.y += Math.sin(c.pitch) * sp; c.z += fz * cp * sp; }
   if (k.has('KeyD')) { c.x += fz * sp; c.z -= fx * sp; } if (k.has('KeyA')) { c.x -= fz * sp; c.z += fx * sp; }
   if (k.has('KeyE')) c.y += sp; if (k.has('KeyQ')) c.y -= sp;
-  c.y = Math.max(c.y, heightAt(c.x, c.z) + 1.5);
   if (k.size || S.walk) scheduleHash();
 }
 addEventListener('keydown', e => {
@@ -469,8 +470,8 @@ const readHash = () => Object.fromEntries(new URLSearchParams(location.hash.slic
     S.terrainTex = await textureArray(tt.size, tt.count, tt.files);
     const h = readHash(), id = +(h.map || 9);
     requestAnimationFrame(frame);
-    // a hand-edited address can hold anything: a camera with a NaN in it draws nothing (move() lifts a low y above the ground)
-    const place = Number.isFinite(+h.x) && Number.isFinite(+h.z) && h.x && h.z ? {x: +h.x, y: Number.isFinite(+h.y) && h.y ? +h.y : 0, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null;
+    // a hand-edited address can hold anything: a camera with a NaN in it draws nothing (no height: loadMap puts it above the ground)
+    const place = Number.isFinite(+h.x) && Number.isFinite(+h.z) && h.x && h.z ? {x: +h.x, y: Number.isFinite(+h.y) && h.y ? +h.y : null, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null;
     await loadMap(S.manifest.maps.some(m => m.id === id) ? id : S.manifest.maps[0].id, place);
     loadModels().then(() => status(S.summary)).catch(e => status('Models: ' + e.message));
     setInterval(() => { if (S.stats && !S.keys.size) $('#help').dataset.stats = `${S.stats.tilesDrawn} tiles, ${S.stats.objsDrawn} objects`; }, 500);
