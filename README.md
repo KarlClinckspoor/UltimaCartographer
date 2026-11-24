@@ -41,7 +41,7 @@ block ES modules over `file://`.)
 | `js/games/uw/engine.js`, `js/games/uw1/`, `js/games/uw2/` | Ultima Underworld I and II top down: every level from the Underworld editor's export, with teleports and stairs as links |
 | `data/uw1/`, `data/uw2/` | Written by the Underworld editor (`export-web`, see `docs/uw-export.md`); checked by `tools/check-uw-export.mjs` |
 | `uwviewer/` | The Underworld levels in 3D (WebGL2), from the same export; open `/uwviewer/` |
-| `u9viewer/` | Ultima IX in 3D, from the U9 editor's export (`u9viewer/data`, not in the repo); open `/u9viewer/` |
+| `u9viewer/` | Ultima IX in 3D, from the U9 editor's export (`u9viewer/data`); open `/u9viewer/` |
 | `js/games/u6/`, `js/games/se/`, `js/games/md/` | Each game's tables for the engine (level names, entrances, readable objects) |
 | `data/u3/`, `data/u4/`, `data/u5/` | Extracted by `tools/extract-u3.mjs`, `tools/extract-u4.mjs` and `tools/extract-u5.mjs` |
 | `js/lib/draw.js` | Drawing helpers shared by game modules (U2 onwards) |
@@ -238,5 +238,31 @@ as small labels in a corner of the cell.
 
 ## Credits
 
-A fan project, not affiliated with Origin Systems or Electronic Arts. The idea of an
-interactive Ultima map comes from kxmode's Ultima VII map.
+A fan project, not affiliated with or endorsed by Electronic Arts or Origin Systems. The games, and all the
+maps, pictures and words drawn here from their files, belong to their owners: they were made by Richard
+Garriott and the people of Origin Systems (Akalabeth by Richard Garriott, published by California Pacific).
+
+**The idea.** An interactive Ultima map comes from kxmode's Ultima VII map.
+
+**The decompilations** this site reads its tables, formats and rules from, and the people who started them:
+
+| Game | Project | Original author | Used through |
+| --- | --- | --- | --- |
+| Akalabeth, Ultima I–III | u0-, u1-, u2-, u3-decompiled | Karl Clinckspoor | [KarlClinckspoor](https://github.com/KarlClinckspoor) |
+| Ultima IV | [u4-decompiled](https://github.com/ergonomy-joe/u4-decompiled) | ergonomy_joe | [u4-decompiled-port](https://github.com/KarlClinckspoor/u4-decompiled-port) |
+| Ultima V | [u5d](https://github.com/wonst719/u5d) | wonst719 | [KarlClinckspoor/u5d](https://github.com/KarlClinckspoor/u5d); the sextant found with the help of [OpenU5-Enhanced](https://github.com/thekojac304/OpenU5-Enhanced) (thekojac304) |
+| Ultima VI | [u6-decompiled](https://github.com/ergonomy-joe/u6-decompiled) | ergonomy_joe | [KarlClinckspoor/u6-decompiled](https://github.com/KarlClinckspoor/u6-decompiled) |
+| The Savage Empire, Martian Dreams | u6se-, u6md-decompiled, built on u6-decompiled | Karl Clinckspoor | [KarlClinckspoor](https://github.com/KarlClinckspoor) |
+| Ultima VII (both parts) | [Ultima7_Decomp](https://github.com/Kitrinx/Ultima7_Decomp) | Kitrinx (Jamie Blanks) | [KarlClinckspoor/Ultima7_Decomp](https://github.com/KarlClinckspoor/Ultima7_Decomp) |
+| Ultima VIII | [Ultima8_Decomp](https://github.com/Kitrinx/Ultima8_Decomp) | Kitrinx (Jamie Blanks) | [Ultima8_DecompPort](https://github.com/KarlClinckspoor/Ultima8_DecompPort), whose editor u8edit bakes the U8 maps |
+| Ultima Underworld I and II | [underworld-exhumed](https://github.com/abedegno/underworld-exhumed) | abedegno | [UltimaUnderworldEditorAvalonia](https://github.com/KarlClinckspoor/UltimaUnderworldEditorAvalonia), which exports the levels |
+| Ultima IX | [U9GL](https://github.com/theGreyWanderer-uc/tgwUltima9GL) | theGreyWanderer | [UltimaIXEditorAvalonia](https://github.com/KarlClinckspoor/UltimaIXEditorAvalonia), which exports the world |
+
+**Exult.** The [Exult team](https://github.com/exult/exult)'s engine is where the Ultima VII file formats, the sextant's
+reckoning and Serpent Isle's regions were checked.
+
+**Software.** [Leaflet](https://leafletjs.com/) (BSD-2-Clause, Vladimir Agafonkin and contributors) draws the 2D maps.
+The 3D viewers follow ideas from [noclip.website](https://noclip.website/) (Jasper St. Pierre and contributors) for drawing
+large worlds smoothly; no code is taken from it.
+
+**License.** The site's own code and documents are MIT (see `LICENSE`); the game data is not covered.
