@@ -109,7 +109,8 @@ async function renderBig(d, under) {
     ? `<h3>The Underworld</h3><p>256 × 256 squares beneath Britannia. Each dungeon’s bottom level opens onto it at the square of the dungeon’s entrance above, so the dungeons are the ways between the two lands.</p>`
     : `<h3>Britannia</h3><p>256 × 256 squares. The eight moonstones start buried at the moongates; at night a gate stands wherever a stone lies buried.</p>
        <p class="muted">Dotted green rings mark squares where Search finds something; dotted white ones are signposts.</p>`;
-  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, images, svg, cell, features, info, coords: under ? null : sextant,
+  // both wrap: the position is a byte and the outdoor chunk window is masked with & 0x1f (mainout.c)
+  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, wrap: true, images, svg, cell, features, info, coords: under ? null : sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       ...(under ? [] : [{id: 'shrines', name: 'Shrines', swatch: swatch(label(.5, .8, 'S', .9, C.shrine))}, {id: 'gates', name: 'Moongates (at the start)', swatch: swatch(ring(0, 0, C.gate, '', .14))}]),
       {id: 'signs', name: 'Signposts', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))},
@@ -380,6 +381,7 @@ export default {
     if ((m = /^D(\d)-([1-8])$/.exec(mapId || '')) && +m[1] < 8) return renderLevel(d, +m[1], +m[2]);
     if ((m = /^P(\d+)\.(-?\d)$/.exec(mapId || '')) && d.towns[m[1]] && d.towns[m[1]].bytes[m[2]]) return renderTown(d, +m[1], +m[2], hour);
     if (mapId === 'under') return renderBig(d, true);
+    if (mapId && mapId !== 'brit') throw new Error(`no map ${mapId}`);   // the viewer then opens the default map and fixes the address
     return renderBig(d, false);
   },
 };

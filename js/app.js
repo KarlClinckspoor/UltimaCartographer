@@ -117,7 +117,7 @@ function hashFor(game, mapId, params, v) {
   const q = new URLSearchParams();
   for (const [k, val] of Object.entries(params)) if (val !== null && val !== undefined && val !== '') q.set(k, val);
   if (v) q.set('view', `${+v.x.toFixed(2)},${+v.y.toFixed(2)},${v.z}`);
-  return `#${game.id}/${mapId}?${q}`;
+  return `#${game.id}/${mapId}?${q.toString().replace(/%2C/g, ',')}`;   // commas read better, and parse the same
 }
 
 function currentView() {

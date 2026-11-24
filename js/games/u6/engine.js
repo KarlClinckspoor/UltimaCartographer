@@ -208,6 +208,16 @@ export function makeEngine(cfg) {
 
     const cell = (x, y) => {
       const key = y * W + x, links = [];
+      // a double-width or double-height object or person also covers the squares left of and above its own: a click
+      // there shows it, as on its own square, and outlines both squares
+      if (!(peopleAt.get(key) || []).some(e => !e.part) && !(at.get(key) || []).some(e => e.part === 0)) {
+        const pe = (peopleAt.get(key) || []).find(e => e.part), oe = (at.get(key) || []).find(e => e.part);
+        const [ax, ay] = pe ? [pe.n.now.x, pe.n.now.y] : oe ? [oe.r.x, oe.r.y] : [];
+        if (ax != null && (ax !== x || ay !== y)) {
+          const c = cell(ax, ay);
+          return c && {...c, box: [Math.min(x, ax), Math.min(y, ay), Math.abs(ax - x) + 1, Math.abs(ay - y) + 1]};
+        }
+      }
       let body = '', title = tname(d, gr[key]);
       for (const e of peopleAt.get(key) || []) {
         if (e.part) continue;

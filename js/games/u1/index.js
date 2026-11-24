@@ -368,6 +368,7 @@ export default {
     const m = parse(mapId);
     if (m.kind === 'town') return renderTown(d, m.n);
     if (m.kind === 'dungeon') return renderDungeon(d, m.n, m.L, params);
+    if (mapId && mapId !== 'world') throw new Error(`no map ${mapId}`);   // the viewer then opens the default map and fixes the address
     return renderWorld(d);
   },
 };

@@ -323,7 +323,7 @@ export default {
     const d = await load();
     maps = Object.keys(d.maps);
     let m = /^([XG]\d)([0-5])(?:-(\d+))?$/.exec(mapId || '');
-    if (!m || !d.maps[m[1] + m[2]]) m = /^(X2)(0)$/.exec('X20');
+    if (!m || !d.maps[m[1] + m[2]]) throw new Error(`no map ${mapId}`);   // the viewer then opens the default map and fixes the address
     const id = m[1] + m[2], type = +m[2];
     if (type === 0) return renderSurface(d, id);
     if (type >= 4) return renderLevel(d, id, Math.min(15, Math.max(0, +(m[3] || 0))));

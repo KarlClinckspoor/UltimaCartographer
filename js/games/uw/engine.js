@@ -13,7 +13,7 @@ const flat = c => typeof c === 'string' ? esc(c) : `${esc(c.name)}${c.contents?.
 export function makeUW(cfg) {
   const DATA = new URL(`../../../data/${cfg.id}/`, import.meta.url);
   const HINT = `run UwEditor.Cli export-web --game ${cfg.id} --out data/${cfg.id} (docs/uw-export.md)`;
-  let meta = null, loading = null;
+  let meta = null, loading = null, teleportIndex = null;
   const levels = new Map();
   const load = () => loading ||= json(new URL('manifest.json', DATA), HINT).then(m => (meta = m));
   const level = id => {
@@ -49,12 +49,14 @@ export function makeUW(cfg) {
       // teleports from here, and the places other levels' teleports arrive on this one (needs their objects)
       const out = [];
       O.forEach((o, i) => { const k = ends(o?.link); if (k?.kind === 'teleport') out.push({i, o, k}); });
-      const others = await Promise.all(man.levels.filter(l => l.id !== id).map(l => level(l.id).then(v => ({l, v}))));
-      const arrive = new Map();
-      for (const {l, v} of [{l: L, v: lv}, ...others]) v.objects.forEach(o => {
-        const k = ends(o?.link); if (k?.kind !== 'teleport' || k.level !== id) return;
-        const key = k.y * 64 + k.x; if (!arrive.has(key)) arrive.set(key, new Set()); arrive.get(key).add(l.id);
-      });
+      // where they arrive: from teleports.json (tools/index-uw.mjs), else from every level's objects
+      const arrive = new Map(), arriveAt = (from, x, y) => { const key = y * 64 + x; if (!arrive.has(key)) arrive.set(key, new Set()); arrive.get(key).add(from); };
+      const index = await (teleportIndex ||= fetch(new URL('teleports.json', DATA)).then(r => r.ok ? r.json() : null).catch(() => null));
+      if (index) for (const [from, to, x, y] of index) { if (to === id) arriveAt(from, x, y); }
+      else {
+        const others = await Promise.all(man.levels.filter(l => l.id !== id).map(l => level(l.id).then(v => ({l, v}))));
+        for (const {l, v} of [{l: L, v: lv}, ...others]) v.objects.forEach(o => { const k = ends(o?.link); if (k?.kind === 'teleport' && k.level === id) arriveAt(l.id, k.x, k.y); });
+      }
       const sq = (tx, ty) => [tx, 63 - ty];
       let tele = '', arr = '', start = '';
       const seen = new Set();
@@ -98,6 +100,12 @@ export function makeUW(cfg) {
         return {title: main ? cap(main.name) : cap(TYPES[t.type] || 'tile'), body, links};
       };
 
+      // where "Open this level in 3D" puts you: the new-game start, else the open tile nearest the middle (not rock)
+      const entry = L.start ? [Math.floor(L.start.x), Math.floor(L.start.z)] : (() => {
+        for (let r = 0; r < 32; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++)
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === r && tile(32 + dx, 32 + dy).type) return [32 + dx, 32 + dy];
+        return [32, 32];
+      })();
       const features = [];
       O.forEach(o => { if (o && o.in == null && o.name && !o.flags?.includes('invisible')) features.push({name: cap(o.name), x: o.x, y: 63 - o.y, detail: o.critter ? 'creature' : o.text ? 'writing' : ''}); });
       return {
@@ -105,7 +113,7 @@ export function makeUW(cfg) {
         info: `<h3>${esc(L.name.replace(/ \(\d+\)$/, ''))}</h3>
           <p>64 × 64 tiles, north up, as the Underworld editor draws the map: everything on the level, not only what a player has seen. ${L.objects} objects.</p>
           <p>Amber dots are teleports and stairs to other levels: click one to follow it. Blue rings are where they arrive.${L.start ? ' The green arrow is where a new game begins.' : ''}</p>
-          <p><a href="${viewer(Math.floor(L.start?.x ?? 32), Math.floor(L.start?.z ?? 32))}" target="_blank">Open this level in 3D</a></p>`,
+          <p><a href="${viewer(...entry)}" target="_blank">Open this level in 3D</a></p>`,
         layers: [
           {id: 'map', name: 'Map'},
           {id: 'teleports', name: 'Teleports and stairs', swatch: swatch(`<circle cx=".5" cy=".5" r=".3" fill="${C.tele}" stroke="#111" stroke-width=".08"/>`)},

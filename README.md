@@ -1,9 +1,11 @@
 # Ultima Cartographer
 
-Interactive maps of the Ultima series (U0–U8, PC/GOG versions), built from the games' own
-data and generators. A static site: no build step, no server code, ready for GitHub Pages.
+**Open it: https://karlclinckspoor.github.io/UltimaCartographer/**
 
-Plan and decisions: `The Ultima Cartographer research and plan.md`.
+Interactive maps of the Ultima series, from Akalabeth to Ultima IX with The Savage Empire, Martian Dreams
+and both Underworlds (PC/GOG versions), built from the games' own data and generators. Ultima IX and the
+Underworld levels can also be walked through in 3D. A static site: no build step, no server code, served by
+GitHub Pages.
 
 ## Run it
 

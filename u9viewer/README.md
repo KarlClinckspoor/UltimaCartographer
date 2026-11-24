@@ -35,4 +35,4 @@ Controls: drag to look, WASD to move, Q/E down and up, Shift faster, wheel sets 
 - Loading is heavy: Britannia pulls about 25 MB of models and 64 MB of PNG textures before every object shows
   (see EXPORT.md's size report; `--texture-max 64` and per-map texture sets would cut it).
 - Animated models show their first frame; NPCs and creatures are not in the export.
-- No link from the Cartographer yet.
+- Linked from the Cartographer's game list ("Ultima IX: Ascension (3D)"); its title links back.

@@ -106,7 +106,8 @@ async function renderWorld(d) {
   const info = `<h3>Britannia</h3>
     <p>256 × 256 squares. Moongates: the open one follows Trammel’s phase, and where it sends you follows Felucca’s. Both moons reset to new on every restore.</p>
     <p class="muted">Dotted green rings mark squares where Search finds something. The Shrine of Spirituality has no square of its own: only a moongate reaches it.</p>`;
-  return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, images, svg, cell, features, info, coords: sextant,
+  // the world wraps: the map window moves with & 0xff (U4_MAP.C)
+  return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, wrap: true, images, svg, cell, features, info, coords: sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       {id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, C.gate, '', .14))},
       {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
@@ -339,6 +340,7 @@ export default {
     if ((m = /^([A-Z]+)-room-(\d+)$/.exec(mapId || '')) && d.dungeons[m[1]] && d.dungeons[m[1]].rooms[+m[2]]) return renderRoom(d, m[1], +m[2]);
     if ((m = /^([A-Z]+)-([1-8])$/.exec(mapId || '')) && d.dungeons[m[1]]) return renderLevel(d, m[1], +m[2]);
     if (d.towns[mapId]) return renderTown(d, mapId);
+    if (mapId && mapId !== 'world') throw new Error(`no map ${mapId}`);   // the viewer then opens the default map and fixes the address
     return renderWorld(d);
   },
 };

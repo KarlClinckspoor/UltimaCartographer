@@ -287,6 +287,7 @@ export default {
     const m = /^([A-Z_]+)-([1-8])$/.exec(mapId || '');
     if (m && d.dungeons[m[1]]) return renderLevel(d, m[1], +m[2]);
     if (TOWNS.some(t => t[0] === mapId)) return renderTown(d, mapId);
+    if (mapId && mapId !== 'SOSARIA' && mapId !== 'AMBROSIA') throw new Error(`no map ${mapId}`);   // the viewer then opens the default map and fixes the address
     return renderWorld(d, mapId === 'AMBROSIA' ? 'AMBROSIA' : 'SOSARIA');
   },
 };
