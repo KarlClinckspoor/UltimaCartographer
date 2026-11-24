@@ -18,7 +18,15 @@ class Server(http.server.ThreadingHTTPServer):
     request_queue_size = 128
 
 
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+class Handler(http.server.SimpleHTTPRequestHandler):
+    # Without a Cache-Control header browsers guess how long to keep files and may run an old module after an
+    # edit; no-cache makes them ask every time (an unchanged file is a quick 304).
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache')
+        super().end_headers()
+
+
+handler = functools.partial(Handler, directory=root)
 with Server((bind, port), handler) as httpd:
     print(f'Serving {os.path.abspath(root)} at http://{bind}:{port}/', flush=True)
     httpd.serve_forever()

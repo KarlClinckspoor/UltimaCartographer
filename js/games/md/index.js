@@ -8,7 +8,18 @@ const ENTRANCES = [[0x043, 0x051, 1], [0x080, 0x08D, 0], [0x076, 0x0F2, 3], [0x0
   [0x07C, 0x028, 4], [0x13E, 0x118, 0], [0x00A, 0x060, 5], [0x3B7, 0x1C4, 0], [0x05C, 0x0B0, 5], [0x3DC, 0x1DD, 0], [0x05E, 0x029, 4], [0x227, 0x1AB, 0]];
 const CHAMBERS = [[0x0CA, 0x295], [0x34D, 0x295], [0x13A, 0x17A], [0x2CD, 0x1FA]];
 
+// The coordinates the plaques on Mars give (objcmd.c CmdLook, type 0xac on the surface): latitude
+// (y - 512) * 240 / 1024 S or N, longitude (x - 512) * 360 / 1024 counted as 180 - lon W or lon + 180 E.
+// C's division: towards zero.
+const plaque = z => z === 0 ? (x, y) => {
+  const lat = Math.trunc((y - 0x200) * 0xf0 / 0x400), lon = Math.trunc((x - 0x200) * 0x168 / 0x400);
+  const la = lat > 0 ? `${lat}°S` : lat < 0 ? `${-lat}°N` : '0°';
+  const lo = lon === 0 || lon === 180 || lon === -180 ? `${lon === 0 ? 180 : 0}°` : lon > 0 ? `${180 - lon}°W` : `${lon + 180}°E`;
+  return `${la}, ${lo} (as the plaques give it)`;
+} : null;
+
 export default makeEngine({
+  coords: plaque,
   id: 'md', title: 'Martian Dreams', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
   startHour: 12, ampQuote: true,
   levels: ['Mars', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],

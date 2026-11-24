@@ -140,7 +140,7 @@ return {
     };
 
     return {
-      title: cfg.world, subtitle: `${cfg.subtitle} · cutoff lift ${cut} · ${hh(hour)}`, width: N, height: N, native: 8, draw, cell,
+      title: cfg.world, subtitle: `${cfg.subtitle} · cutoff lift ${cut} · ${hh(hour)}`, width: N, height: N, native: 8, draw, cell, coords: cfg.coords,
       features: people.map(n => ({name: pname(n), x: n.px, y: n.py, detail: n.act != null ? ACT[n.act] : ''})),
       svg: svgDoc(N, N, g('grid', `<path d="${Array.from({length: CH - 1}, (_, i) => `M${(i + 1) * 16} 0V${N}M0 ${(i + 1) * 16}H${N}`).join('')}" stroke="#fff" stroke-width=".5" opacity=".25" fill="none"/>`)),
       info: `<h3>${cfg.world}</h3><p>3072 × 3072 tiles, drawn as you pan from the game’s chunk map (${d.map.length} chunk slots built from ${d.chunks.length / 256} reusable chunks) and its ${d.obj.x.length.toLocaleString()} objects as a new game starts.</p>

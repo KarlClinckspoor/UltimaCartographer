@@ -10,7 +10,16 @@ const RZ = [0, 0, 0, 0, 0, 0, 5, 0, 5, 0, 0, 0, 0, 0, 0, 1, 5, 5, 0, 0, 0, 0, 0,
 const DUNGEONS = ['Deceit', 'Despise', 'Destard', 'Wrong', 'Covetous', 'Shame', 'Hythloth', 'GSA', 'Control', 'Passion', 'Diligence',
   'Tomb of Kings', 'Ant Mound', 'Swamp Cave', 'Spider Cave', 'Cyclops Cave', 'Heftimus Cave', "Heroes' Hole", 'Pirate Cave', "Buccaneer's Cave"];
 
+// The sextant and the Locate spell (spell.c SPELL_PrintLocation), on the surface and in the gargoyles' land only:
+// degrees from (304, 360), 8 squares a degree; the gargoyles' land counts 4 for each of its squares.
+const sextant = z => z === 0 || z === 5 ? (x, y) => {
+  if (z) { x <<= 2; y <<= 2; }
+  const lat = (y - 0x168) >> 3, lon = (x - 0x130) >> 3;
+  return `${Math.abs(lat)}°${lat > 0 ? 'S' : 'N'}, ${Math.abs(lon)}°${lon > 0 ? 'E' : 'W'}`;
+} : null;
+
 export default makeEngine({
+  coords: sextant,
   id: 'u6', title: 'Ultima VI', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
   startHour: 12, moonstones: true,
   levels: ['Britannia', 'Underground, level 1', 'Underground, level 2', 'Underground, level 3', 'Underground, level 4', 'The Gargoyle lands'],

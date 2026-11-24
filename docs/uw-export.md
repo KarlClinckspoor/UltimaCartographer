@@ -219,3 +219,38 @@ The viewer has a "full bright" switch, but a game-like look is the default.
   Teleports, stairs and level changes are links. A button opens the same spot in uwviewer.
 
 Expected size: a few MB per game (textures and sprites shared, small meshes). The report will tell.
+
+## As implemented (editor 0.1.58, 2026-11-24)
+
+The export is built and written (UW1 9 levels, UW2 42). The format as written is the editor's
+`docs/WEB-EXPORT.md`; where it differs from the text above, it is right. In short (details in
+`docs/uw-export-corrections.md`):
+
+- Record sizes are in `manifest.bytes`: mesh vertex 24, model vertex 28, **sprite 36** (34 bytes of fields
+  and two zero bytes), tile 8.
+- Level triangles face the open space (checked here: all 83,003 floor and 72,428 ceiling triangles agree), so
+  back faces can be culled. Models are not wound consistently: draw both sides.
+- Critters are their OBJECTS.GR picture, 0.6 tile high. `levels[].light` is null unless UW2 sets a minimum.
+- Level names are "Level 1", or "Talorus 2 (34)" in UW2. `light.json` has `names`, `monoAtLevel`, `range`,
+  and nine-entry `shades` rows (15 not drawn).
+- `models.bin`'s last u16 is flags (bit 0 invisible). tiles.bin flag bit 3 is the tile's light bit.
+- Links: a `lever` has `object` (the trigger) and `does` (its link); links to levels not exported are left out.
+  Objects also have `h` and `in`; `lock` has `locked`, `number`, `key`.
+- Sizes: UW1 13.2 MB, UW2 19.5 MB, about half of it mesh.bin.
+
+### Checked by `tools/check-uw-export.mjs`
+
+783 checks, all passing: record sizes against the files, texture strips and the sprite page against their
+PNG headers, animated frames, light tables, every mesh vertex's layer, kind and position (inside 64 x 4 x 64
+tiles), one kind per triangle, triangle tiles, model layers and objects, sprite rectangles (and no sprite for
+a held object), tiles.bin values, map.png sizes, object counts, links (teleport levels and tiles, door, trap
+and lever objects, `via` chains) and holders, and exactly one new-game start.
+
+### Asks for the editor
+
+- **Ceiling shade.** `LevelGeometry` gives ceilings a shade of -0.7 (0.7, seen only from below), and the
+  export clamps it to 0, so every ceiling vertex has shade 0. The viewer reads a ceiling's 0 as 0.7 for now.
+  Better: write `abs(Shade) * 255` (kind 2 already says it is a ceiling).
+- **Mesh size**, if the repo size matters: positions as u16 in 1/256 tile, or an index buffer, would roughly
+  halve mesh.bin. Not urgent.
+- The pixel comparison against the editor's 3D view can now be done with `uwviewer/`.

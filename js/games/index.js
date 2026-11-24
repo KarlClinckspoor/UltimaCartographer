@@ -11,6 +11,8 @@ import md from './md/index.js';
 import u7bg from './u7bg/index.js';
 import u7si from './u7si/index.js';
 import u8 from './u8/index.js';
+import uw1 from './uw1/index.js';
+import uw2 from './uw2/index.js';
 
 export const GAMES = [
   u0,
@@ -25,4 +27,6 @@ export const GAMES = [
   u7bg,
   u7si,
   u8,
+  uw1,
+  uw2,
 ];

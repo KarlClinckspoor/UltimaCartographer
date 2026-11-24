@@ -66,6 +66,10 @@ const signHTML = s => `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>
 
 // ---------- Britannia and the Underworld ----------
 
+// The sextant's reading (cast2.c CAST2_06ec: the sextant, outdoors in Britannia at night, and In Wis): latitude from y, longitude from x, each as two letters, the high
+// and low nibble, A for 0;
+// the game prints them in runes.
+const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderBig(d, under) {
   const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
   const images = await gridImages(d, under ? 'under' : 'brit', bytes, W, W, 32);
@@ -105,7 +109,7 @@ async function renderBig(d, under) {
     ? `<h3>The Underworld</h3><p>256 × 256 squares beneath Britannia. Each dungeon’s bottom level opens onto it at the square of the dungeon’s entrance above, so the dungeons are the ways between the two lands.</p>`
     : `<h3>Britannia</h3><p>256 × 256 squares. The eight moonstones start buried at the moongates; at night a gate stands wherever a stone lies buried.</p>
        <p class="muted">Dotted green rings mark squares where Search finds something; dotted white ones are signposts.</p>`;
-  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, images, svg, cell, features, info,
+  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, images, svg, cell, features, info, coords: under ? null : sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       ...(under ? [] : [{id: 'shrines', name: 'Shrines', swatch: swatch(label(.5, .8, 'S', .9, C.shrine))}, {id: 'gates', name: 'Moongates (at the start)', swatch: swatch(ring(0, 0, C.gate, '', .14))}]),
       {id: 'signs', name: 'Signposts', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))},

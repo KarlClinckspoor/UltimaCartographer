@@ -1,0 +1,163 @@
+{
+  "format": "uwweb",
+  "version": 1,
+  "game": "uw1",
+  "axes": "x east, y up, z north, in tiles; tile (tx, ty) covers x tx..tx+1 and z ty..ty+1",
+  "winding": "every level triangle's front faces the open space: counter-clockwise seen from inside when drawn unmirrored (x east to the right, z north away); cross(v1 - v0, v2 - v0) on the plain numbers points away from the open space. Models are not wound consistently: draw both sides.",
+  "bytes": {
+    "meshVertex": 24,
+    "modelVertex": 28,
+    "sprite": 36,
+    "tile": 8
+  },
+  "textures": {
+    "files": ["tex-0.png", "tex-1.png"],
+    "count": 334,
+    "size": 64,
+    "perFile": 256,
+    "animated": [
+      {"layer": 19, "frames": [19, 243, 244, 245], "ms": 250},
+      {"layer": 25, "frames": [25, 246, 247, 248], "ms": 250},
+      {"layer": 39, "frames": [39, 249, 250, 251], "ms": 250},
+      {"layer": 56, "frames": [56, 252, 253, 254], "ms": 250},
+      {"layer": 95, "frames": [95, 255, 256, 257], "ms": 250},
+      {"layer": 132, "frames": [132, 258, 259, 260], "ms": 250},
+      {"layer": 134, "frames": [134, 261, 262, 263], "ms": 250},
+      {"layer": 135, "frames": [135, 264, 265, 266], "ms": 250},
+      {"layer": 138, "frames": [138, 267, 268, 269], "ms": 250},
+      {"layer": 158, "frames": [158, 270, 271, 272], "ms": 250},
+      {"layer": 159, "frames": [159, 273, 274, 275], "ms": 250},
+      {"layer": 160, "frames": [160, 276, 277, 278], "ms": 250},
+      {"layer": 184, "frames": [184, 279, 280, 281, 282], "ms": 250},
+      {"layer": 193, "frames": [193, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296], "ms": 250},
+      {"layer": 195, "frames": [195, 297, 298, 299], "ms": 250},
+      {"layer": 209, "frames": [209, 300, 301, 302, 303], "ms": 250},
+      {"layer": 231, "frames": [231, 304, 305, 306, 307], "ms": 250},
+      {"layer": 232, "frames": [232, 308, 309, 310, 311], "ms": 250},
+      {"layer": 233, "frames": [233, 312, 313, 314, 315], "ms": 250},
+      {"layer": 234, "frames": [234, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329], "ms": 250},
+      {"layer": 235, "frames": [235, 330, 331, 332, 333], "ms": 250}
+    ]
+  },
+  "sprites": {
+    "files": ["sprites-0.png"],
+    "width": 512,
+    "height": 256
+  },
+  "levels": [
+    {
+      "id": 1,
+      "name": "Level 1",
+      "realm": null,
+      "vertices": 36054,
+      "triangles": 12018,
+      "modelVertices": 7437,
+      "sprites": 306,
+      "objects": 534,
+      "light": null,
+      "minLight": -1,
+      "start": {
+        "x": 32.5,
+        "y": 3,
+        "z": 2.5,
+        "heading": 0
+      }
+    },
+    {
+      "id": 2,
+      "name": "Level 2",
+      "realm": null,
+      "vertices": 37002,
+      "triangles": 12334,
+      "modelVertices": 6969,
+      "sprites": 340,
+      "objects": 526,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 3,
+      "name": "Level 3",
+      "realm": null,
+      "vertices": 34506,
+      "triangles": 11502,
+      "modelVertices": 6153,
+      "sprites": 336,
+      "objects": 563,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 4,
+      "name": "Level 4",
+      "realm": null,
+      "vertices": 35256,
+      "triangles": 11752,
+      "modelVertices": 9738,
+      "sprites": 358,
+      "objects": 581,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 5,
+      "name": "Level 5",
+      "realm": null,
+      "vertices": 38436,
+      "triangles": 12812,
+      "modelVertices": 4677,
+      "sprites": 409,
+      "objects": 583,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 6,
+      "name": "Level 6",
+      "realm": null,
+      "vertices": 38196,
+      "triangles": 12732,
+      "modelVertices": 5103,
+      "sprites": 370,
+      "objects": 507,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 7,
+      "name": "Level 7",
+      "realm": null,
+      "vertices": 43008,
+      "triangles": 14336,
+      "modelVertices": 8067,
+      "sprites": 312,
+      "objects": 608,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 8,
+      "name": "Level 8",
+      "realm": null,
+      "vertices": 44082,
+      "triangles": 14694,
+      "modelVertices": 1671,
+      "sprites": 564,
+      "objects": 622,
+      "light": null,
+      "minLight": -1
+    },
+    {
+      "id": 9,
+      "name": "Level 9",
+      "realm": null,
+      "vertices": 42636,
+      "triangles": 14212,
+      "modelVertices": 792,
+      "sprites": 103,
+      "objects": 220,
+      "light": null,
+      "minLight": -1
+    }
+  ]
+}

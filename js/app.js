@@ -22,6 +22,8 @@
 //     cell(x, y) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}], box?: [x, y, w, h]} | null
 //                                       box: what to outline instead of the square (e.g. an item's picture)
 //     hover,                            false: no square follows the pointer (maps where a square is a pixel)
+//     coords(x, y) -> string,           the game's own coordinates for a square (a sextant's reading), shown
+//                                       beside x, y in the readout and the popup
 //     info,                             html for the side panel
 //     draw(canvas, x0, y0, span, off),  for maps too big for images: draws squares x0..x0+span,
 //                                       y0..y0+span into a 256-pixel canvas (may return a Promise);
@@ -317,7 +319,7 @@ function openCell(x, y, pan) {
   if (pan && !map.getBounds().contains(box)) map.panTo(box.getCenter());
   if (!c) return;
   const links = c.links || [];
-  const html = `<h4>${esc(c.title)}</h4>${c.body || ''}<p class="xy">x ${x}, y ${y}</p>` +
+  const html = `<h4>${esc(c.title)}</h4>${c.body || ''}<p class="xy">x ${x}, y ${y}${view.coords ? ` · ${esc(view.coords(x, y))}` : ''}</p>` +
     (links.length ? `<div class="links">${links.map((l, i) => `<button class="btn" data-link="${i}">${esc(l.label)}</button>`).join('')}</div>` : '');
   const popup = L.popup({maxWidth: 340, maxHeight: 440, autoPanPadding: [30, 30]}).setLatLng(toLatLng(x + .5, y + .1)).setContent(html).openOn(map);
   for (const b of popup.getElement().querySelectorAll('[data-link]')) b.onclick = () => {
@@ -328,7 +330,7 @@ function openCell(x, y, pan) {
 
 map.on('mousemove', e => {
   const c = cellAt(e.latlng);
-  if (c) { if (view.hover !== false) hoverRect.setBounds(cellBounds(c[0], c[1])).addTo(map); readout.set(`x ${c[0]}, y ${c[1]}`); }
+  if (c) { if (view.hover !== false) hoverRect.setBounds(cellBounds(c[0], c[1])).addTo(map); readout.set(`x ${c[0]}, y ${c[1]}${view.coords ? ` · ${view.coords(c[0], c[1])}` : ''}`); }
   else { hoverRect.remove(); readout.set('—'); }
 });
 map.on('click', e => { const c = cellAt(e.latlng); if (c) openCell(c[0], c[1], false); });

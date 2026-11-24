@@ -243,6 +243,7 @@ export function makeEngine(cfg) {
       <p class="muted">Click a square for everything on it: containers show what they hold, signs and books their text, ladders and holes where they lead, people their day and conversation.</p>`;
     return {
       title: cfg.levels[z], subtitle: `${cfg.title} · ${hh(hour)}`, width: W, height: W, native: 16, wrap: true, draw, cell, features, info,
+      coords: cfg.coords && cfg.coords(z) ? (x, y) => cfg.coords(z)(x, y) : null,
       svg: svgDoc(W, W, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(W, W))),
       layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, '#8cc6e0'))},
         {id: 'names', name: 'Entrance names', swatch: swatch(label(.5, .8, 'A', .9, '#ffb0a0'))}, {id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, '#b48cff', '', .14))},

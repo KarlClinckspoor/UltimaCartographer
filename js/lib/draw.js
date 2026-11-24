@@ -24,6 +24,32 @@ export const canvas = (w, h) => { const c = document.createElement('canvas'); c.
 // Copy tile number `tile` of a sheet with `perRow` tiles of `size` pixels to square (x, y).
 export const blit = (ctx, sheet, size, tile, x, y, perRow = 16) =>
   ctx.drawImage(sheet, (tile % perRow) * size, Math.floor(tile / perRow) * size, size, size, x * size, y * size, size, size);
+// Glyphs of an 8 x 8 font drawn centred in their cells: fonts like CHARSET.EGA keep each sign in the top left
+// (columns 0-5, rows 0-6), which looks off-centre on a map. Draws at twice the size so a sign can move half a
+// font pixel; the target canvas has 2 * size pixels a square. Signs that fill their cell are drawn as they are.
+export function centredGlyphs(sheet, size = 8, perRow = 16) {
+  const c = canvas(sheet.width, sheet.height), x = c.getContext('2d');
+  x.drawImage(sheet, 0, 0);
+  const px = x.getImageData(0, 0, sheet.width, sheet.height).data, offsets = new Map();
+  const offset = tile => {
+    if (offsets.has(tile)) return offsets.get(tile);
+    const sx = (tile % perRow) * size, sy = Math.floor(tile / perRow) * size;
+    let x0 = size, y0 = size, x1 = -1, y1 = -1;
+    for (let y = 0; y < size; y++) for (let xx = 0; xx < size; xx++) {
+      const o = ((sy + y) * sheet.width + sx + xx) * 4;
+      if (px[o + 3] && (px[o] | px[o + 1] | px[o + 2])) { x0 = Math.min(x0, xx); x1 = Math.max(x1, xx); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    }
+    const r = x1 < 0 ? [0, 0] : [size - (x1 - x0 + 1) - 2 * x0, size - (y1 - y0 + 1) - 2 * y0];
+    offsets.set(tile, r);
+    return r;
+  };
+  return (ctx, tile, cx, cy) => {
+    const [dx, dy] = offset(tile), s2 = size * 2;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#000'; ctx.fillRect(cx * s2, cy * s2, s2, s2);
+    ctx.drawImage(sheet, (tile % perRow) * size, Math.floor(tile / perRow) * size, size, size, cx * s2 + dx, cy * s2 + dy, s2, s2);
+  };
+}
 export async function image(url) { const i = new Image(); i.src = url; await i.decode(); return i; }
 export async function json(url, hint) {
   const r = await fetch(url);

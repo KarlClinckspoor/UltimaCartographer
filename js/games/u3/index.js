@@ -1,6 +1,6 @@
 // Ultima III: Sosaria, Ambrosia, the 12 townes and castles and the 7 dungeons, from the game files
 // (extracted to data/u3 by tools/extract-u3.mjs). Mechanics: u3-decompiled/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json} from '../../lib/draw.js';
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u3/', import.meta.url);
 
@@ -41,7 +41,7 @@ const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441
 let loading = null;
 const load = () => loading ||= (async () => {
   const [d, tiles, charset] = await Promise.all([json(new URL('u3.json', DATA), 'run tools/extract-u3.mjs'), image(new URL('tiles.png', DATA)), image(new URL('charset.png', DATA))]);
-  d.charset = charset;
+  d.charset = charset; d.glyph = centredGlyphs(charset);
   for (const m of Object.values(d.maps)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
   for (const m of Object.values(d.dungeons)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
   d.tiles = tiles; d.png = {};
@@ -226,13 +226,13 @@ function renderLevel(d, key, L) {
   const dn = DUNGEONS.find(r => r[0] === key), m = d.dungeons[key];
   const cells = m.bytes.subarray((L - 1) * 256, L * 256), at = (x, y) => cells[y * 16 + x];
   // the level as the gem view prints it: one CHARSET.ULT character a cell, '?' for what it has no sign for
-  const gem = canvas(128, 128), gctx = gem.getContext('2d');
+  const gem = canvas(256, 256), gctx = gem.getContext('2d');
   const parts = {marks: ''};
   const features = [];
   let chests = 0;
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     const c = at(x, y);
-    blit(gctx, d.charset, 8, gemChar(c), x, y);
+    d.glyph(gctx, gemChar(c), x, y);
     if (c === 0xA0) features.push({name: 'Secret door', x, y});
     if (c === 0x40) { parts.marks += badge(x, y, 'C', C.chest); chests++; features.push({name: 'Chest', x, y}); }
     if (c < 0x80 && c & 0x30) features.unshift({name: c === 0x30 ? 'Ladder up and down' : c & 0x10 ? 'Ladder up' : 'Ladder down', x, y});
@@ -261,7 +261,7 @@ function renderLevel(d, key, L) {
     <p>Drawn as the gem view (Peer at a gem, or Vieda) draws it, signs from the game’s own font; it prints “?” for chests and the special squares, so letters say what each is: C chest, F fountain, R rod, T Time Lord, W wind, X trap, G gremlins, M misty writing.</p>
     <p class="muted">Fixed in the game file, the same for everyone. Every level wraps at its edges. Light is only for the view: you can move and fight in the dark.</p>`;
   return {
-    title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, wrap: true, native: 8, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
+    title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, wrap: true, native: 16, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [
       {id: 'gem', name: 'Gem view'},
       {id: 'marks', name: 'What the “?” squares are', swatch: swatch(badge(.2, .3, 'F', C.event))},

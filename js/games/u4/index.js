@@ -1,7 +1,7 @@
 // Ultima IV: Britannia, the 16 castles, townes and villages (and Lord British's upper floor), the 8
 // dungeons with their rooms, from the game files (data/u4, by tools/extract-u4.mjs). Townsfolk show
 // their whole conversation. Mechanics: u4-decompiled-port/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json} from '../../lib/draw.js';
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u4/', import.meta.url);
 
@@ -38,7 +38,7 @@ const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441
 let loading = null;
 const load = () => loading ||= (async () => {
   const [d, tiles, charset] = await Promise.all([json(new URL('u4.json', DATA), 'run tools/extract-u4.mjs'), image(new URL('tiles.png', DATA)), image(new URL('charset.png', DATA))]);
-  d.charset = charset;
+  d.charset = charset; d.glyph = centredGlyphs(charset);
   d.worldBytes = Uint8Array.from(atob(d.world), c => c.charCodeAt(0));
   const hex = h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16));
   for (const t of Object.values(d.towns)) t.bytes = hex(t.cells);
@@ -71,6 +71,9 @@ const townId = n => n === 1 ? 'LCB_1' : TOWN_FILES[n - 1];
 
 // ---------- Britannia ----------
 
+// The sextant's reading (U4_LOCAT.C CMD_Locate): latitude from y, longitude from x, each as two letters, the high
+// and low nibble, A for 0.
+const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderWorld(d) {
   const W = 256, images = await gridImages(d, 'world', d.worldBytes, W, W, 32);
   let names = '', gates = '', items = '';
@@ -103,7 +106,7 @@ async function renderWorld(d) {
   const info = `<h3>Britannia</h3>
     <p>256 × 256 squares. Moongates: the open one follows Trammel’s phase, and where it sends you follows Felucca’s. Both moons reset to new on every restore.</p>
     <p class="muted">Dotted green rings mark squares where Search finds something. The Shrine of Spirituality has no square of its own: only a moongate reaches it.</p>`;
-  return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, images, svg, cell, features, info,
+  return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, images, svg, cell, features, info, coords: sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       {id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, C.gate, '', .14))},
       {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
@@ -222,12 +225,12 @@ async function renderLevel(d, key, L) {
   const di = DUNGEON_FILES.indexOf(key), dn = d.dungeons[key], pl = d.places[16 + di], abyss = key === 'ABYSS';
   const cells = dn.bytes.subarray((L - 1) * 64, L * 64), at = (x, y) => cells[y * 8 + x];
   // the level as the gem view prints it: one CHARSET.EGA character a cell (U4_PEER.C ShowDungeonMap)
-  const gem = canvas(64, 64), gctx = gem.getContext('2d');
+  const gem = canvas(128, 128), gctx = gem.getContext('2d');
   const parts = {rooms: '', monsters: ''};
   const features = [];
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
     const c = at(x, y), hi = c & 0xF0;
-    blit(gctx, d.charset, 8, GEM_CHARS[hi >> 4], x, y);
+    d.glyph(gctx, GEM_CHARS[hi >> 4], x, y);
     if (hi === 0xE0) features.push({name: 'Secret door', x, y});
     if (hi === 0x40) features.push({name: 'Chest', x, y});
     if (hi >= 0x10 && hi <= 0x30) features.unshift({name: ['', 'Ladder up', 'Ladder down', 'Ladder up and down'][hi >> 4], x, y});
@@ -275,7 +278,7 @@ async function renderLevel(d, key, L) {
     ${STONES[di] ? `<p>Altar stone: ${STONES[di]}.</p>` : ''}
     <p class="muted">Each level is 8 × 8 and wraps at its edges.</p>`;
   return {
-    title: `${pl.name.replace(/!$/, '')}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, native: 8, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
+    title: `${pl.name.replace(/!$/, '')}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, native: 16, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [
       {id: 'gem', name: 'Gem view'},
       {id: 'rooms', name: 'Room numbers', swatch: swatch(badge(.2, .3, 1, C.room))},

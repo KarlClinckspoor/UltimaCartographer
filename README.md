@@ -38,6 +38,10 @@ block ES modules over `file://`.)
 | `js/games/u7bg/`, `js/games/u7si/` | Each game's name for the engine |
 | `js/games/u8/index.js` | Ultima VIII: the 45 maps that have items, drawn as you pan from u8edit's web export, with a roof cut, teleport links and a graph of how the maps connect |
 | `data/u8/` | Written by u8edit (`--export-web`, see `docs/u8-export.md`); checked by `tools/check-u8-export.mjs` |
+| `js/games/uw/engine.js`, `js/games/uw1/`, `js/games/uw2/` | Ultima Underworld I and II top down: every level from the Underworld editor's export, with teleports and stairs as links |
+| `data/uw1/`, `data/uw2/` | Written by the Underworld editor (`export-web`, see `docs/uw-export.md`); checked by `tools/check-uw-export.mjs` |
+| `uwviewer/` | The Underworld levels in 3D (WebGL2), from the same export; open `/uwviewer/` |
+| `u9viewer/` | Ultima IX in 3D, from the U9 editor's export (`u9viewer/data`, not in the repo); open `/u9viewer/` |
 | `js/games/u6/`, `js/games/se/`, `js/games/md/` | Each game's tables for the engine (level names, entrances, readable objects) |
 | `data/u3/`, `data/u4/`, `data/u5/` | Extracted by `tools/extract-u3.mjs`, `tools/extract-u4.mjs` and `tools/extract-u5.mjs` |
 | `js/lib/draw.js` | Drawing helpers shared by game modules (U2 onwards) |
@@ -215,6 +219,22 @@ as small labels in a corner of the cell.
   are drawn at 60%, as u8edit draws them.
 - "How the maps connect" is u8edit's Transitions view: every map at the position u8edit keeps, an
   arrow for each way between two. Map names are kept in the module (`NAMES`) until u8edit sets them; a name from u8edit wins. Maps without a name are unused or unfinished ones the game never sends you to: they are listed apart, under "Unused and unfinished", and grey in the graph.
+
+## Ultima Underworld notes
+
+- Exported by the Underworld editor (`../UltimaUnderworldEditorAvalonia`), not by a script here:
+
+      UwEditor.Cli export-web --game uw1 --data "<game folder or game.gog>" --out data/uw1
+      UwEditor.Cli export-web --game uw2 --data "<game folder or game.gog>" --out data/uw2
+      node tools/check-uw-export.mjs
+
+- The 2D maps are the editor's map pictures, north up, with everything on the level. Amber dots are
+  teleports and stairs, blue rings where they arrive; popups list a tile's objects with their text, locks,
+  contents and links, and open the same spot in 3D.
+- `uwviewer/` draws the level mesh, the 3D models and the sprites with the game's light falloff
+  (light.json), animated textures, the ceiling only from below, and hidden objects, traps and triggers on
+  request. Click for what is there; teleports can be followed. The URL is
+  `#<game>/<level>/<x>,<z>[,<y>,<yaw>,<pitch>]` in tiles.
 
 ## Credits
 
