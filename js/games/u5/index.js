@@ -363,7 +363,7 @@ export default {
       const n = +m[1];
       for (const z of Object.keys(meta.towns[n].bytes).map(Number).sort((a, b) => a - b)) list.push({id: `P${n}.${z}`, name: FLOOR(z), group: `${meta.places[n - 1].name}: floors`});
     }
-    if ((m = /^D(\d)-/.exec(mapId || ''))) {
+    if ((m = /^D(\d)-/.exec(mapId || '')) && +m[1] < 8) {   // as render(): D8 and D9 are no dungeon (#u5/D8-1 drew Britannia)
       const k = +m[1], name = meta.places[32 + k].name;
       for (let l = 1; l <= 8; l++) list.push({id: `D${k}-${l}`, name: String(l), title: `Level ${l}`, group: `${name}: levels`});
       if (k !== 1) for (let r = 0; r < 16; r++) list.push({id: `D${k}-room-${r}`, name: String(r), title: `Room ${r}`, group: `${name}: rooms`});
