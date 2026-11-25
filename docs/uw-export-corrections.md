@@ -49,6 +49,18 @@ gravestone, v from 16/64 to 1), or list each layer's picture rectangle in
 remaps model UVs onto it (`uwviewer/viewer.js`, `textureArray` and the models block of the level
 loader). Once the export does this, that code can go.
 
+## Requested: enchantments in objects.json (2026-11-25)
+
+`objects.json` marks an object `enchanted` but not what the enchantment is, so the site can't name
+it as the game does ("chain gauntlets of Unsurpassed Protection", "a wand of Fireball with 8 full
+charges"). **Ask:** add the words LookAt adds for an identified object (obj/LOOK.C `do_of`): e.g.
+`"of": "Unsurpassed Protection"`, `"charges": 8`, and for UW2's swapped weapon names (effects 0-7,
+`EnchantmentEffects`) what it really does.
+
+**Meanwhile** `tools/extract-uw-enchant.mjs` reads LEV.ARK and STRINGS.PAK itself and writes
+`data/<game>/enchant.json` (object index: of, charges, note); `js/lib/uwnames.js` builds the names.
+Run it again after a re-export (it warns if the objects no longer match LEV.ARK).
+
 Not done on the editor's side: the pixel comparison with the editor's 3D view (there is no
 viewer to draw it with yet), and a run against a real `game.gog`.
 

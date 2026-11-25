@@ -4,6 +4,8 @@
 // World space is the export's: x east, y up, z north, in tiles. The GPU gets (x, y, -z), so the picture is not
 // mirrored; level triangles face the open space and are culled from behind, models are drawn from both sides.
 
+import {annotate, holds, notes} from '../js/lib/uwnames.js';
+
 const $ = s => document.querySelector(s);
 const status = t => { $('#status').textContent = t; };
 const canvas = $('#gl'), gl = canvas.getContext('webgl2', {antialias: true});
@@ -144,7 +146,8 @@ window.__uw = S;
 async function loadGame(game) {
   S.game = game; DATA = new URL(`../data/${game}/`, import.meta.url);
   status('Loading textures…');
-  [S.man, S.light] = await Promise.all([fetchJson('manifest.json'), fetchJson('light.json')]);
+  [S.man, S.light, S.ench] = await Promise.all([fetchJson('manifest.json'), fetchJson('light.json'),
+    fetch(url('enchant.json')).then(r => r.ok ? r.json() : {}).catch(() => ({}))]);   // tools/extract-uw-enchant.mjs
   const T = S.man.textures;
   if (S.tex) gl.deleteTexture(S.tex);
   S.tex = await textureArray(T);
@@ -174,7 +177,7 @@ async function loadLevel(id, place) {
   const [mesh, models, sprites, tiles, objects] = await Promise.all([fetchBin(p + 'mesh.bin'), fetchBin(p + 'models.bin'), fetchBin(p + 'sprites.bin'), fetchBin(p + 'tiles.bin'), fetchJson(p + 'objects.json')]);
   const L = S.man.levels.find(l => l.id === id);
   if (S.level) for (const b of S.level.buffers) gl.deleteBuffer(b);
-  const lv = {id, L, objects, tiles: new Uint8Array(tiles), buffers: [], mesh: new DataView(mesh), models: new DataView(models), sprites: new DataView(sprites)};
+  const lv = {id, L, objects: annotate(objects, S.ench?.[id]), tiles: new Uint8Array(tiles), buffers: [], mesh: new DataView(mesh), models: new DataView(models), sprites: new DataView(sprites)};
   const buf = data => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); lv.buffers.push(b); return b; };
   const f = (loc, n, type, stride, off, normalized = false) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, type, normalized, stride, off); };
   const i = (loc, n, type, stride, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribIPointer(loc, n, type, stride, off); };
@@ -370,24 +373,24 @@ function pick(px, py) {
   const TYPES = ['solid rock', 'open', 'open to the south-east', 'open to the south-west', 'open to the north-east', 'open to the north-west', 'slope up to the north', 'slope up to the south', 'slope up to the east', 'slope up to the west'];
   const ends = k => k?.kind === 'lever' ? ends(k.does) : k;
   const levelName = id => (S.man.levels.find(l => l.id === id)?.name || `level ${id}`).replace(/ \(\d+\)$/, '');
-  const flat = c => typeof c === 'string' ? esc(c) : `${esc(c.name)}${c.contents?.length ? ` (${c.contents.map(flat).join(', ')})` : ''}`;
   const item = o => {
     const bits = [];
-    if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}${o.critter.talksAs ? `; talks as ${esc(o.critter.talksAs)}` : ''}`);
+    if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}`);
     if (o.desc) bits.push(esc(cap(o.desc)));
     if (o.lock) bits.push(`${o.lock.locked ? 'Locked' : 'Unlocked'}${o.lock.key ? `; opens with ${esc(o.lock.key)}` : ''}`);
-    if (o.contents?.length) bits.push(`Holds ${o.contents.map(flat).join(', ')}`);
+    if (o.kids.length) bits.push(`Holds ${holds(O, o, esc)}`);
     if (o.text) bits.push(`“${esc(o.text.trim())}”`);
     const k = ends(o.link); if (k?.kind === 'teleport') bits.push(`Takes you to ${esc(k.level === lv.id ? 'another place on this level' : levelName(k.level))} (${k.x}, ${k.y}).`);
     else if (o.link?.text) bits.push(esc(cap(o.link.text)));
-    return `<li><b>${esc(cap(o.name))}</b>${bits.length ? `<br>${bits.join('<br>')}` : ''}</li>`;
+    return `<li><b>${esc(cap(o.full))}</b>${bits.length ? `<br>${bits.join('<br>')}` : ''}</li>`;
   };
   const teles = list.map(o => ends(o.link)).filter(k => k?.kind === 'teleport');
   box.style.display = 'block';
-  box.innerHTML = `<h2>${esc(cap(focus ? focus.name : TYPES[t.type] || 'square'))}</h2>
+  box.innerHTML = `<h2>${esc(cap(focus ? focus.full : TYPES[t.type] || 'square'))}</h2>
     <p class="muted">Square ${tx}, ${ty} · ${esc(TYPES[t.type] || '')}${t.type ? `, floor height ${t.floor}` : ''}${best.kind === 1 ? ' · wall' : best.kind === 2 ? ' · ceiling' : ''}</p>
     ${list.length ? `<ul>${list.slice(0, 12).map(item).join('')}</ul>` : ''}
     ${teles.map((k, i) => `<button data-go="${i}">${k.level === lv.id ? 'Go there' : `Go to ${esc(levelName(k.level))}`}</button>`).join('')}
+    ${notes(O, list.slice(0, 12)).map(n => `<p class="muted">${esc(n)}</p>`).join('')}
     <p><a href="../#${S.game}/L${lv.id}?view=${tx + .5},${63 - ty + .5},5">Show on the map</a></p><button id="close">Close</button>`;
   $('#close').onclick = () => { box.style.display = 'none'; };
   for (const b of box.querySelectorAll('[data-go]')) b.onclick = () => {

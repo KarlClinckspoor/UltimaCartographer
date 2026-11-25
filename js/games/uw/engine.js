@@ -3,6 +3,7 @@
 // teleports (stairs between levels, magic doors) are links. Squares are tiles with north up: square (x, y) is
 // tile (x, 63 - y). Each level can also be opened in the 3D viewer (uwviewer/).
 import {esc, g, svgDoc, swatch, gridLines, gridSwatch, image, json} from '../../lib/draw.js';
+import {annotate, holds, notes} from '../../lib/uwnames.js';
 
 const TYPES = ['solid rock', 'open', 'open to the south-east', 'open to the south-west', 'open to the north-east', 'open to the north-west',
   'slope up to the north', 'slope up to the south', 'slope up to the east', 'slope up to the west'];
@@ -15,7 +16,7 @@ const flat = c => typeof c === 'string' ? esc(c) : `${esc(c.name)}${c.contents?.
 export function makeUW(cfg) {
   const DATA = new URL(`../../../data/${cfg.id}/`, import.meta.url);
   const HINT = `run UwEditor.Cli export-web --game ${cfg.id} --out data/${cfg.id} (docs/uw-export.md)`;
-  let meta = null, loading = null, teleportIndex = null;
+  let meta = null, loading = null, teleportIndex = null, enchanting = null;
   const levels = new Map();
   const load = () => loading ||= json(new URL('manifest.json', DATA), HINT).then(m => (meta = m));
   const level = id => {
@@ -23,7 +24,9 @@ export function makeUW(cfg) {
       fetch(new URL(`levels/${id}/tiles.bin`, DATA)).then(r => {
         if (!r.ok) { console.warn(`data/${cfg.id}/levels/${id} is missing: ${HINT}`); throw new Error(`Couldn’t load the map data for ${cfg.title}. Try reloading the page.`); }
         return r.arrayBuffer(); }),
-      json(new URL(`levels/${id}/objects.json`, DATA))]).then(([t, o]) => ({tiles: new Uint8Array(t), objects: o})));
+      json(new URL(`levels/${id}/objects.json`, DATA)),
+      // the enchantments the game names (tools/extract-uw-enchant.mjs); without the file, plain names
+      enchanting ||= fetch(new URL('enchant.json', DATA)).then(r => r.ok ? r.json() : {}).catch(() => ({}))]).then(([t, o, e]) => ({tiles: new Uint8Array(t), objects: annotate(o, e[id])})));
     return levels.get(id);
   };
   const nameOf = id => meta?.levels.find(l => l.id === id)?.name.replace(/ \(\d+\)$/, '') || `Level ${id}`;
@@ -72,19 +75,19 @@ export function makeUW(cfg) {
       const linkLine = k => {
         if (!k) return '';
         if (k.kind === 'teleport') return `Takes you to ${esc(k.level === id ? 'another place on this level' : nameOf(k.level))}.`;
-        if (k.kind === 'lever') return `Operates ${esc(O[k.object]?.name || 'something elsewhere')}${k.does ? `: ${linkLine(k.does)}` : '.'}`;
+        if (k.kind === 'lever') return `Operates ${esc(O[k.object]?.full || 'something elsewhere')}${k.does ? `: ${linkLine(k.does)}` : '.'}`;
         return k.text ? esc(cap(k.text)) + (k.text.endsWith('.') ? '' : '.') : '';
       };
       const objHtml = o => {
         const bits = [];
-        if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}${o.critter.talksAs ? `; speaks as ${esc(o.critter.talksAs)}` : ''}`);
+        if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}`);
         if (o.desc) bits.push(esc(cap(o.desc)));
         if (o.lock) bits.push(`${o.lock.locked ? 'Locked' : 'Unlocked'}${o.lock.key ? `; opened by ${esc(o.lock.key)}` : ''}`);
-        if (o.contents?.length) bits.push(`Holds ${o.contents.map(flat).join(', ')}`);
+        if (o.kids.length) bits.push(`Holds ${holds(O, o, esc)}`);
         if (o.text) bits.push(`“${esc(o.text.trim())}”`);
         const l = linkLine(o.link); if (l) bits.push(l);
         if (o.flags?.length) bits.push(`<span class="muted">${esc(cap(o.flags.map(f => FLAG[f] || f).join(', ')))}</span>`);
-        return `<li><b>${esc(cap(o.name))}</b>${bits.length ? `<br>${bits.join('<br>')}` : ''}</li>`;
+        return `<li><b>${esc(cap(o.full))}</b>${bits.length ? `<br>${bits.join('<br>')}` : ''}</li>`;
       };
       const viewer = (tx, ty) => `uwviewer/#${cfg.id}/${id}/${tx + .5},${ty + .5}`;   // relative to the site's page
 
@@ -99,9 +102,10 @@ export function makeUW(cfg) {
         const body = `<p class="muted">${esc(cap(TYPES[t.type] || `type ${t.type}`))}${t.type ? `, floor height ${t.floor}` : ''}${flags.length ? ` · ${flags.join(', ')}` : ''}</p>` +
           (shown.length ? `<ul>${shown.slice(0, 14).map(objHtml).join('')}</ul>${shown.length > 14 ? `<p class="muted">…and ${shown.length - 14} more.</p>` : ''}` : '') +
           (from ? `<p>Arrive here from ${esc([...from].map(l => l === id ? 'elsewhere on this level' : nameOf(l)).join(', '))}.</p>` : '') +
-          (t.type ? `<p><a href="${viewer(tx, ty)}" target="_blank">Open here in 3D</a></p>` : '');
+          (t.type ? `<p><a href="${viewer(tx, ty)}" target="_blank">Open here in 3D</a></p>` : '') +
+          notes(O, shown.slice(0, 14)).map(n => `<p class="muted">${esc(n)}</p>`).join('');
         const main = shown.find(o => o.critter) || shown.find(o => o.link) || shown[0];
-        return {title: main ? cap(main.name) : cap(TYPES[t.type] || 'square'), body, links};
+        return {title: main ? cap(main.full) : cap(TYPES[t.type] || 'square'), body, links};
       };
 
       // where "Open this level in 3D" puts you: the new-game start, else the open tile nearest the middle (not rock)
@@ -111,7 +115,7 @@ export function makeUW(cfg) {
         return [32, 32];
       })();
       const features = [];
-      O.forEach(o => { if (o && o.in == null && o.name && !o.flags?.includes('invisible')) features.push({name: cap(o.name), x: o.x, y: 63 - o.y, detail: o.critter ? 'creature' : o.text ? 'writing' : ''}); });
+      O.forEach(o => { if (o && o.in == null && o.name && !o.flags?.includes('invisible')) features.push({name: cap(o.full), x: o.x, y: 63 - o.y, detail: o.critter ? 'creature' : o.text ? 'writing' : ''}); });
       return {
         title: L.name.replace(/ \(\d+\)$/, ''), subtitle: cfg.title, width: 64, height: 64, native: 16, images: [{src: pic, layer: 'map'}], svg, cell, features,
         info: `<h3>${esc(L.name.replace(/ \(\d+\)$/, ''))}</h3>
