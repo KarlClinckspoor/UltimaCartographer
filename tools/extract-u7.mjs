@@ -118,25 +118,36 @@ for (let sc = 0; sc < 144; sc++) {
 const init = file('INITGAME.DAT'), files = {};
 for (const [o, len] of flex(init)) if (len > 13) files[init.subarray(o, o + 13).toString('latin1').replace(/\0.*$/s, '').replace(/\.$/, '').toLowerCase()] = init.subarray(o + 13, o + len);
 const nibswap = v => ((v & 15) << 4) | (v >> 4);
+// IREG entries from p: each a length byte then the entry; a container's contents follow it, ended by a 0 or 1 (eggs,
+// barges and virtue stones use the same bytes for other things: Exult read_ireg_objects). Returns the top-level entries,
+// each {e, len, s, f, q, kids: [...]}, and where it stopped; with stopAtEnd, a 0 or 1 at the top level ends the list
+// (an NPC's inventory).
+function iregEntries(b, p, stopAtEnd) {
+  const top = [], stack = [top];
+  while (p < b.length) {
+    const len = b[p++];
+    if (len === 0 || len === 1) { if (stack.length > 1) { stack.pop(); continue; } if (stopAtEnd) break; continue; }
+    if (len === 2) { p += 2; continue; }
+    if (len === 255) { p += 1; const l = b.readUInt16LE(p); p += 2 + l; continue; }   // special entry
+    const e = b.subarray(p, p + len); p += len;
+    if (![6, 10, 12, 13, 14, 18].includes(len)) continue;
+    const s = e[2] + 256 * (e[3] & 3), f = e[3] >> 2, item = {e, len, s, f, q: len === 6 || len === 10 ? e[5] : e[7], kids: []};
+    stack[stack.length - 1].push(item);
+    if ((len === 12 || len === 13) && ![7, 9, 11].includes(cls(s)) && (e[4] | e[5] << 8)) stack.push(item.kids);
+  }
+  return {top, p};
+}
+// contents as compact arrays: [shape, frame, quality, ...contents]
+const tree = items => items.map(i => { used.add(key(i.s, i.f)); return [i.s, i.f, i.q, ...tree(i.kids)]; });
 let iregCount = 0;
 for (let sc = 0; sc < 144; sc++) {
   const b = files[`u7ireg${sc.toString(16).padStart(2, '0')}`];
   if (!b) continue;
   const scx = (sc % 12) * 16, scy = Math.floor(sc / 12) * 16;
-  let p = 0, depth = 0;
-  while (p < b.length) {
-    let len = b[p++];
-    if (len === 0 || len === 1) { if (depth) depth--; continue; }
-    if (len === 2) { p += 2; continue; }
-    if (len === 255) { p += 1; const l = b.readUInt16LE(p); p += 2 + l; continue; }   // special entry
-    const e = b.subarray(p, p + len); p += len;
-    if (![6, 10, 12, 13, 14, 18].includes(len)) continue;
-    const s = e[2] + 256 * (e[3] & 3), f = e[3] >> 2;
-    const isContainerLike = len === 12 || len === 13;
+  for (const {e, len, s, f, q, kids} of iregEntries(b, 0, false).top) {
     const lift = nibswap(len === 6 || len === 10 ? e[4] : e[len === 13 ? 10 : 9]) & 15;
-    if (!depth) { objs.push({x: (scx + (e[0] >> 4)) * 16 + (e[0] & 15), y: (scy + (e[1] >> 4)) * 16 + (e[1] & 15), z: lift, s, f, q: len === 6 || len === 10 ? e[5] : e[7], fixed: 0}); iregCount++; }
-    // its contents follow, ended by a 0 or 1; eggs, barges and virtue stones use these bytes for other things (Exult read_ireg_objects)
-    if (isContainerLike && ![7, 9, 11].includes(cls(s)) && (e[4] | e[5] << 8)) depth++;
+    objs.push({x: (scx + (e[0] >> 4)) * 16 + (e[0] & 15), y: (scy + (e[1] >> 4)) * 16 + (e[1] & 15), z: lift, s, f, q, fixed: 0, kids: kids.length ? tree(kids) : null});
+    iregCount++;
   }
 }
 for (const o of objs) if (cls(o.s) !== 7) used.add(key(o.s, o.f));
@@ -153,18 +164,9 @@ const npcs = [];
     const nm = r.subarray(101, 117).toString('latin1').replace(/\0.*$/s, '').trim();
     const x = ((sc % 12) * 16 + (r[0] >> 4)) * 16 + (r[0] & 15), y = (Math.floor(sc / 12) * 16 + (r[1] >> 4)) * 16 + (r[1] & 15);
     p += 117;
-    if (inv) {   // skip the inventory: entries until a 0 or 1 at depth 0
-      let depth = 0;
-      while (p < b.length) {
-        const len = b[p++];
-        if (len === 0 || len === 1) { if (!depth) break; depth--; continue; }
-        if (len === 2) { p += 2; continue; }
-        if (len === 255) { p += 1; p += 2 + b.readUInt16LE(p); continue; }
-        const e = b.subarray(p, p + len); p += len;
-        if ((len === 12 || len === 13) && (e[4] | e[5] << 8)) depth++;
-      }
-    }
-    if ((sf & 0x3FF) && (x || y)) { npcs.push({n, name: nm, x, y, z: r.readUInt16LE(8) >> 12, sf}); used.add(key(sf & 0x3FF, sf >> 10)); }
+    let inventory = null;
+    if (inv) { const r2 = iregEntries(b, p, true); p = r2.p; if (r2.top.length) inventory = r2.top; }   // entries until a 0 or 1 at depth 0
+    if ((sf & 0x3FF) && (x || y)) { npcs.push({n, name: nm, x, y, z: r.readUInt16LE(8) >> 12, sf, ...(inventory ? {inv: tree(inventory)} : {})}); used.add(key(sf & 0x3FF, sf >> 10)); }
   }
 }
 // schedule.dat (INITGAME.DAT): NPC count (the Avatar not counted), word offsets, then 4-byte entries:
@@ -225,14 +227,23 @@ for (const [j, fr] of frames.entries()) {
 writeFileSync(join(out, 'frames.bin'), fb);
 writeFileSync(join(out, 'map.bin'), u7map);
 writeFileSync(join(out, 'chunks.bin'), chunks);
-// objects.bin: 8 bytes each, sorted by y then x: x, y (uint16), lift, flags (1 fixed), shape | frame << 10, quality
+// objects.bin: 10 bytes each, sorted by y then x: x, y (uint16), lift, flags (1 fixed, 2 not drawn), shape | frame << 10,
+// quality (a lock's and its key's number; a stack's count), 0
 objs.sort((a, b) => a.y - b.y || a.x - b.x);
-const ob = Buffer.alloc(objs.length * 8);
-objs.forEach((o, i) => { ob.writeUInt16LE(o.x, i * 8); ob.writeUInt16LE(o.y, i * 8 + 2); ob[i * 8 + 4] = o.z; ob[i * 8 + 5] = o.fixed | (cls(o.s) === 7 ? 2 : 0); ob.writeUInt16LE(o.s | o.f << 10, i * 8 + 6); });
+const R = 10, ob = Buffer.alloc(objs.length * R);
+objs.forEach((o, i) => { const k = i * R; ob.writeUInt16LE(o.x, k); ob.writeUInt16LE(o.y, k + 2); ob[k + 4] = o.z; ob[k + 5] = o.fixed | (cls(o.s) === 7 ? 2 : 0); ob.writeUInt16LE(o.s | o.f << 10, k + 6); ob[k + 8] = o.q; });
 writeFileSync(join(out, 'objects.bin'), ob);
+// contents.json: what each container on the map holds, keyed by its index in objects.bin
+const contents = {}; objs.forEach((o, i) => { if (o.kids) contents[i] = o.kids; });
+writeFileSync(join(out, 'contents.json'), JSON.stringify(contents));
 // names: TEXT.FLX entry n is the name of shape n
 const text = file('TEXT.FLX'), names = flex(text).slice(0, 1024).map(([o, len]) => text.subarray(o, o + len).toString('latin1').replace(/\0.*$/s, ''));
-writeFileSync(join(out, `${id}.json`), JSON.stringify({names, tfa: [...tfa], pages: pages.length, lastH, npcs}));
+// frame names: some shapes name each frame (food, reagents, amulets, desk items, Serpent Isle's keys); the names are
+// TEXT.FLX's misc names (from entry 0x500), which frame has which from the Exult team's tables (tools/u7-framenames.json)
+const textAt = i => { const [o, len] = flex(text)[i] || [0, 0]; return text.subarray(o, o + len).toString('latin1').replace(/ .*$/s, ''); };
+const frameNames = {};
+for (const [s, f, m] of JSON.parse(readFileSync(new URL('./u7-framenames.json', import.meta.url)))[id] || []) frameNames[s * 64 + f] = textAt(0x500 + m);
+writeFileSync(join(out, `${id}.json`), JSON.stringify({names, frameNames, tfa: [...tfa], pages: pages.length, lastH, npcs}));
 const kb = n => `${Math.round(n / 1024)} KB`;
 console.log(`${id}: ${usedChunks.size} chunks used, ${objs.length} objects (${iregCount} movable), ${frames.length} frames in ${pages.length} atlas pages`);
 console.log(`sizes: chunks ${kb(chunks.length)}, map ${kb(u7map.length)}, objects ${kb(ob.length)}, frames table ${kb(fb.length)}`);

@@ -94,8 +94,15 @@ export function makeEngine(cfg) {
   const tname = (d, t) => cap(clean(d.look[t]) || 'Unnamed object');
   const oname = (d, r) => tname(d, tileOf(d, r) - 0);
 
+  // An item's picture, a line high: its tile cut from the tile sheet (16-pixel tiles, 32 a row) as a CSS sprite.
+  // Percentages place the tile whatever size the line is. A double-size object shows its base (bottom right) tile.
+  function icon(d, r) {
+    const t = tileOf(d, r), rows = d.sheet.naturalHeight / 16;
+    return `<span class="item-icon" aria-hidden="true" style="background-image:url('${d.sheet.src}');background-size:3200% ${rows * 100}%;` +
+      `background-position:${(t % 32) / 31 * 100}% ${(t >> 5) / (rows - 1) * 100}%"></span>`;
+  }
   function itemLine(d, r, depth = 0) {
-    let s = esc(oname(d, r));
+    let s = icon(d, r) + esc(oname(d, r));
     if (r.qty > 1) s += ` (${r.qty})`;
     if (r.status & INVISIBLE) s += ' <span class="muted">(invisible)</span>';
     if (cfg.note) s += cfg.note(r);
@@ -272,7 +279,7 @@ export function makeEngine(cfg) {
 
   return {
     id: cfg.id, title: cfg.title, version: cfg.version,
-    params: [{key: 'hour', label: 'Hour of the day', def: cfg.startHour, min: 0, max: 23, help: 'People keep daily schedules. 0 is midnight.'}],
+    params: [{key: 'hour', slider: true, label: 'Hour of the day', def: cfg.startHour, min: 0, max: 23, help: 'People keep daily schedules. 0 is midnight.'}],
     transient: [], defaultMap: 'L0',
     maps() { return cfg.levels.map((name, z) => ({id: `L${z}`, name})); },
     render,

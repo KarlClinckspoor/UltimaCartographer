@@ -56,6 +56,15 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1
 .param .row { display: flex; gap: 6px; }
 .param .row button { flex: none; }
 .param p { margin: 4px 0 0; }
+.param output { font-weight: normal; font-variant-numeric: lining-nums tabular-nums; color: var(--accent); }
+/* the hour slider: an ink line on the paper with a blue thumb */
+input.slider { -webkit-appearance: none; appearance: none; padding: 0; height: 22px; border: 0; background: none; accent-color: var(--accent); cursor: pointer; }
+input.slider:focus { outline: none; }
+input.slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+input.slider::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); }
+input.slider::-moz-range-track { height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); }
+input.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: var(--accent); border: 2px solid var(--accent-ink); box-shadow: 0 0 0 1px var(--accent); }
+input.slider::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--accent-ink); box-shadow: 0 0 0 1px var(--accent); }
 
 button.btn, label.btn, #maps button, #maps a.btn {
   font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
@@ -121,6 +130,8 @@ main { flex: 1; position: relative; min-width: 0; }
 .leaflet-popup-content { overflow-wrap: anywhere; }
 .leaflet-popup-content table { width: 100%; table-layout: fixed; }
 .leaflet-popup-content ul { margin: 4px 0; padding-left: 18px; }
+/* an item's picture before its name in a list of what something holds (a CSS sprite from the game's tile sheet) */
+.leaflet-popup-content .item-icon { display: inline-block; width: 1.1em; height: 1.1em; margin-right: .3em; vertical-align: -.25em; background-repeat: no-repeat; image-rendering: pixelated; }
 .leaflet-popup-content td { padding: 2px 0; }
 .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
 .coord-readout { color: var(--muted); padding: 6px 12px; border-image: var(--sheet-small); image-rendering: pixelated; font-variant-numeric: lining-nums tabular-nums; font-size: 13.5px; }
@@ -133,3 +144,8 @@ main { flex: 1; position: relative; min-width: 0; }
   .icon-btn { display: block; }
   #map-title { left: 52px; }
 }
+
+/* Ultima VII: an item's picture at the height of a line of text, and container contents */
+.u7icon { display: inline-block; vertical-align: middle; image-rendering: pixelated; margin-right: 2px; }
+.leaflet-popup-content ul.holds { list-style: none; padding-left: 14px; margin: 2px 0; }
+.leaflet-popup-content ul.objs { padding-left: 16px; }

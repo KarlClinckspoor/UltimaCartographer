@@ -4,7 +4,9 @@
 // A game module:
 //   id, title, version             shown in the game list
 //   params: [{key, label, type: 'int', def, min, max, help, random?, options?: [[value, label], ...] (a choice list),
-//             file?: {label, accept, read(ArrayBuffer) -> value (throws an Error with a message)}}]
+//             file?: {label, accept, read(ArrayBuffer) -> value (throws an Error with a message)},
+//             slider?: true (a range input with its value beside the label, the map following the thumb; key
+//             'hour' reads as HH:00)}]
 //   transient: ['key']             params dropped when changing map unless a link sets them
 //   defaultMap
 //   maps(params, mapId) -> [{id, name, group?, title?, href?}]   groups show as collapsible lists; href: a link to
@@ -21,7 +23,8 @@
 //                                       toggleable parts in elements with data-layer="<layer id>"
 //     layers: [{id, name, swatch, on?}],
 //     features: [{name, x, y, detail?}], what search finds
-//     cell(x, y) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}], box?: [x, y, w, h]} | null
+//     cell(x, y, at?) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}], box?: [x, y, w, h]} | null
+//                                       at: the exact point clicked, [x, y] in map units (absent for links and search)
 //                                       box: what to outline instead of the square (e.g. an item's picture)
 //     hover,                            false: no square follows the pointer (maps where a square is a pixel)
 //     coords(x, y) -> string,           the game's own coordinates for a square (a sextant's reading), shown
@@ -237,35 +240,16 @@ function drawPanel() {
   $('#game').value = game.id;
   $('#game-version').textContent = game.version || '';
 
-  $('#params').innerHTML = (game.params || []).map(d => `
-    <div class="param">
-      <label for="p-${d.key}">${esc(d.label)}</label>
-      <div class="row">
-        ${d.options ? `<select id="p-${d.key}">${d.options.map(([v, l]) => `<option value="${v}" ${+params[d.key] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
-    : `<input id="p-${d.key}" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">`}
-        ${d.random ? `<button class="btn" data-random="${d.key}" title="Pick a random number">Random</button>` : ''}
-      </div>
-      ${d.file ? `<div class="row file-row"><label class="btn file-btn">${esc(d.file.label)}<input type="file" data-file="${d.key}" accept="${esc(d.file.accept || '')}" hidden></label><span class="muted" id="f-${d.key}"></span></div>` : ''}
-      ${d.help ? `<p class="muted">${esc(d.help)}</p>` : ''}
-    </div>`).join('');
-  for (const inp of document.querySelectorAll('[data-file]')) inp.onchange = async () => {
-    const d = game.params.find(x => x.key === inp.dataset.file), f = inp.files[0];
-    if (!f) return;
-    try {
-      const v = d.file.read(await f.arrayBuffer());
-      fileNote = {key: d.key, text: `Found ${v} in ${f.name}`};
-      go({params: {[d.key]: v}});
-    } catch (e) {
-      $(`#f-${d.key}`).textContent = e.message;
+  // A slider being dragged (or stepped with the keys) keeps its element: rebuilding the panel would drop the thumb.
+  const sliding = document.activeElement?.matches?.('#params input[type=range]') && $('#params').dataset.game === game.id;
+  if (sliding) {
+    for (const d of game.params || []) {
+      const el = $(`#p-${d.key}`), out = $(`#o-${d.key}`);
+      if (!el || (el === document.activeElement && slideTimer)) continue;   // a move still on its way to the map
+      el.value = params[d.key];
+      if (out) out.textContent = sliderText(d, params[d.key]);
     }
-  };
-  if (fileNote && $(`#f-${fileNote.key}`)) $(`#f-${fileNote.key}`).textContent = fileNote.text;
-  for (const d of game.params || []) {
-    const el = $(`#p-${d.key}`);
-    el.onchange = () => go({params: {[d.key]: el.value}});
-  }
-  for (const b of document.querySelectorAll('[data-random]'))
-    b.onclick = () => go({params: {[b.dataset.random]: Math.floor(Math.random() * 100000)}});
+  } else drawParams(game, params);
 
   const groups = [];
   for (const m of game.maps(params, mapId)) {
@@ -301,6 +285,56 @@ function drawPanel() {
   search();
 }
 
+const sliderText = (d, v) => d.key === 'hour' ? `${String(v).padStart(2, '0')}:00` : String(v);
+let slideTimer = null, slidePushed = false;
+
+function drawParams(game, params) {
+  $('#params').dataset.game = game.id;
+  $('#params').innerHTML = (game.params || []).map(d => `
+    <div class="param">
+      <label for="p-${d.key}">${esc(d.label)}${d.slider ? `: <output id="o-${d.key}" for="p-${d.key}">${sliderText(d, params[d.key])}</output>` : ''}</label>
+      <div class="row">
+        ${d.options ? `<select id="p-${d.key}">${d.options.map(([v, l]) => `<option value="${v}" ${+params[d.key] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+    : d.slider ? `<input id="p-${d.key}" class="slider" type="range" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">`
+    : `<input id="p-${d.key}" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">`}
+        ${d.random ? `<button class="btn" data-random="${d.key}" title="Pick a random number">Random</button>` : ''}
+      </div>
+      ${d.file ? `<div class="row file-row"><label class="btn file-btn">${esc(d.file.label)}<input type="file" data-file="${d.key}" accept="${esc(d.file.accept || '')}" hidden></label><span class="muted" id="f-${d.key}"></span></div>` : ''}
+      ${d.help ? `<p class="muted">${esc(d.help)}</p>` : ''}
+    </div>`).join('');
+  for (const inp of document.querySelectorAll('[data-file]')) inp.onchange = async () => {
+    const d = game.params.find(x => x.key === inp.dataset.file), f = inp.files[0];
+    if (!f) return;
+    try {
+      const v = d.file.read(await f.arrayBuffer());
+      fileNote = {key: d.key, text: `Found ${v} in ${f.name}`};
+      go({params: {[d.key]: v}});
+    } catch (e) {
+      $(`#f-${d.key}`).textContent = e.message;
+    }
+  };
+  if (fileNote && $(`#f-${fileNote.key}`)) $(`#f-${fileNote.key}`).textContent = fileNote.text;
+  for (const d of game.params || []) {
+    const el = $(`#p-${d.key}`);
+    if (d.slider) {
+      // the map follows the thumb, a moment after it stops; one history entry for the whole drag
+      const send = () => {
+        clearTimeout(slideTimer); slideTimer = null;
+        if (+el.value === +state.params[d.key]) return;
+        go({params: {[d.key]: el.value}, push: !slidePushed});
+        slidePushed = true;
+      };
+      el.oninput = () => {
+        $(`#o-${d.key}`).textContent = sliderText(d, el.value);
+        clearTimeout(slideTimer); slideTimer = setTimeout(send, 150);
+      };
+      el.onchange = () => { send(); slidePushed = false; };
+    } else el.onchange = () => go({params: {[d.key]: el.value}});
+  }
+  for (const b of document.querySelectorAll('[data-random]'))
+    b.onclick = () => go({params: {[b.dataset.random]: Math.floor(Math.random() * 100000)}});
+}
+
 function applyLayers() {
   const off = hidden[state.game.id] || new Set();
   for (const el of overlay.getElement().querySelectorAll('[data-layer]'))
@@ -330,8 +364,8 @@ function cellAt(latlng) {
   return view && x >= 0 && y >= 0 && x < view.width && y < view.height ? [x, y] : null;
 }
 
-function openCell(x, y, pan) {
-  const c = view.cell(x, y);
+function openCell(x, y, pan, at) {
+  const c = view.cell(x, y, at);
   const box = c?.box ? L.latLngBounds(toLatLng(c.box[0], c.box[1] + c.box[3]), toLatLng(c.box[0] + c.box[2], c.box[1])) : cellBounds(x, y);
   selRect.setBounds(box).addTo(map);
   if (pan && !map.getBounds().contains(box)) map.panTo(box.getCenter());
@@ -339,7 +373,7 @@ function openCell(x, y, pan) {
   const links = c.links || [];
   const html = `<h4>${esc(c.title)}</h4>${c.body || ''}<p class="xy">x ${x}, y ${y}${view.coords ? ` · ${esc(view.coords(x, y))}` : ''}</p>` +
     (links.length ? `<div class="links">${links.map((l, i) => `<button class="btn" data-link="${i}">${esc(l.label)}</button>`).join('')}</div>` : '');
-  const popup = L.popup({maxWidth: 340, maxHeight: 440, autoPanPadding: [30, 30]}).setLatLng(toLatLng(x + .5, y + .1)).setContent(html).openOn(map);
+  const popup = L.popup({maxWidth: 340, maxHeight: 440, autoPanPadding: [30, 30], autoPanPaddingTopLeft: [30, 110]}).setLatLng(toLatLng(x + .5, y + .1)).setContent(html).openOn(map);
   for (const b of popup.getElement().querySelectorAll('[data-link]')) b.onclick = () => {
     const l = links[b.dataset.link];
     go({mapId: l.map || state.mapId, params: l.params, focus: l.focus});
@@ -351,7 +385,7 @@ map.on('mousemove', e => {
   if (c) { if (view.hover !== false) hoverRect.setBounds(cellBounds(c[0], c[1])).addTo(map); readout.set(`x ${c[0]}, y ${c[1]}${view.coords ? ` · ${view.coords(c[0], c[1])}` : ''}`); }
   else { hoverRect.remove(); readout.set('—'); }
 });
-map.on('click', e => { const c = cellAt(e.latlng); if (c) openCell(c[0], c[1], false); });
+map.on('click', e => { const c = cellAt(e.latlng); if (c) openCell(c[0], c[1], false, [e.latlng.lng, -e.latlng.lat]); });
 map.on('moveend', () => { if (state.game) writeHash(false); });
 function pixelMode() {
   map.getContainer().classList.toggle('pixels-crisp', nativeZoom === null || map.getZoom() >= nativeZoom - 0.01);

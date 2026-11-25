@@ -356,7 +356,7 @@ async function renderRoom(d, k, r) {
 let meta = null;
 export default {
   id: 'u5', title: 'Ultima V', version: 'PC/GOG version. Every map is read from the game files.',
-  params: [{key: 'hour', label: 'Hour of the day (towns)', def: 12, min: 0, max: 23,
+  params: [{key: 'hour', slider: true, label: 'Hour of the day (towns)', def: 12, min: 0, max: 23,
     help: 'Townsfolk keep a daily schedule of up to three places. 0 is midnight.'}],
   transient: [], defaultMap: 'brit',
   maps(params, mapId) {
