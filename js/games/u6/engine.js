@@ -3,7 +3,7 @@
 // tools/extract-u6.mjs). Formats and rules: u6-decompiled SRC (map.c, object.c, npctrack.c, objcmd.c).
 import {esc, g, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, image} from '../../lib/draw.js';
 
-const DOUBLE_H = 0x40, DOUBLE_W = 0x80, BACKGROUND = 0x20;   // TileFlag / TileFlag2 bits (u6.h)
+const DOUBLE_H = 0x40, DOUBLE_W = 0x80, BACKGROUND = 0x20, FOREGROUND = 0x10;   // TileFlag / TileFlag2 bits (u6.h)
 const LOCXYZ = 0, CONTAINED = 8, INVISIBLE = 2;
 const hh = h => `${String(h).padStart(2, '0')}:00`;
 const cap = s => s.replace(/^\w/, c => c.toUpperCase());
@@ -276,7 +276,24 @@ export function makeEngine(cfg) {
     }
     const sheet = d.sheet, avg = d.avg;
     const drawn = (list, off) => list.filter(e => !(e.r.status & INVISIBLE) && (!cfg.hidden.includes(e.r.type)) && !off.has('objects'));
-    const order = list => [...list.filter(e => d.tileFlag2[e.tile] & BACKGROUND), ...list.filter(e => !(d.tileFlag2[e.tile] & BACKGROUND))];
+    // A square's tiles bottom to top, as the game stacks them (decomp SRC/object.c ShowObject), the objects taken in the
+    // order the game visits them (its object list, which is the file's): a background tile replaces the ground; any other
+    // tile goes under everything already there, except a foreground tile, which goes just under the first foreground
+    // tile there, or on top when it is the extra part of a double-size object. So of two plain objects on one square the
+    // first in the list is drawn on top (a vase on its end table). People are visited first: above plain objects, under
+    // foreground ones.
+    const order = (list, pl = []) => {
+      const bg = [], st = [];
+      for (const e of [...pl, ...list]) {
+        const t = e.tile;
+        if (d.tileFlag2[t] & BACKGROUND) { bg.push(e); continue; }
+        if (!(d.tileFlag[t] & FOREGROUND)) { st.unshift(e); continue; }
+        if (e.part) { st.push(e); continue; }
+        const i = st.findIndex(o => d.tileFlag[o.tile] & FOREGROUND);
+        if (i < 0) st.push(e); else st.splice(i, 0, e);
+      }
+      return [...bg, ...st];
+    };
 
     // Animation: each canvas remembers the squares holding a tile that can change and the tick it shows; a tick
     // repaints only those squares whose tiles look different now (ground, objects and people of the square).
@@ -320,8 +337,7 @@ export function makeEngine(cfg) {
           let run = null;   // squares of one changing ground tile and nothing else, side by side: one fillRect a tick
           for (let x = xa; x < xb; x++) {
             const k = y * W + x, list = at.get(k), pl = !off.has('people') && peopleAt.get(k), tiles = [gr[k]];
-            if (list) for (const e of order(drawn(list, off))) { const t = shown(e.tile); blit(t, x, y); tiles.push(t); }
-            if (pl) for (const e of pl) { blit(e.tile, x, y); tiles.push(e.tile); }
+            if (list || pl) for (const e of order(list ? drawn(list, off) : [], pl || [])) { const t = e.n ? e.tile : shown(e.tile); blit(t, x, y); tiles.push(t); }
             if (!A || scale < 8 || !tiles.some(t => A.slot[t] >= 0)) { run = null; continue; }
             const px = (x - x0) * scale, py = (y - y0) * scale;
             if (tiles.length === 1 && run && run.t[0] === tiles[0]) { run.n++; continue; }
@@ -344,7 +360,7 @@ export function makeEngine(cfg) {
           if (x < 0 || x >= W) continue;
           let c = avg[gr[y * W + x]];
           const list = at.get(y * W + x);
-          if (list) for (const e of drawn(list, off)) { const a = avg[e.tile]; if (a[3] > 40) c = a; }
+          if (list) for (const e of order(drawn(list, off))) { const a = avg[e.tile]; if (a[3] > 40) c = a; }
           const pl = !off.has('people') && peopleAt.get(y * W + x);
           if (pl) c = [255, 240, 200, 100];
           const o = (py * 256 + qx) * 4;
@@ -402,7 +418,7 @@ export function makeEngine(cfg) {
       }
       const list = (at.get(key) || []).filter(e => e.part === 0);
       if (list.length) {
-        const items = [...list].reverse();
+        const items = order(list).reverse();   // the one drawn on top first
         body += `<ul>${items.map(e => `<li>${itemLine(d, e.r)}${isReadable(e.r) ? bookHTML(d, e.r) : ''}</li>`).join('')}</ul>`;
         if (!(peopleAt.get(key) || []).some(e => !e.part)) title = oname(d, items[0].r);
         for (const e of items) {

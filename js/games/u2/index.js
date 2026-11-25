@@ -1,7 +1,7 @@
 // Ultima II: every map of every era and planet, from the game files (extracted to data/u2 by
 // tools/extract-u2.mjs). Nothing in Ultima II is random at map level: towers and dungeons too are
 // stored in the files. Mechanics: u2-decompiled/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, image, json, tileLayer, scrollRows} from '../../lib/draw.js';
+import {placeLabels, esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, image, json, tileLayer, scrollRows} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u2/', import.meta.url);
 
@@ -95,8 +95,10 @@ function renderSurface(d, id) {
   const zone = zoneOf(id), earth = zone[0] === 'X', era = +zone[1];
   const m = d.maps[id], places = placesOf(d, zone);
   let labels = '', doors = '';
-  for (const pl of places) labels += label(pl.x + 1.08, pl.y + .78, pl.tile === 10 ? 'Sign' : pl.map ? TYPES[typeOf(pl.map)] : '?', .8, '#f4efe0', 'start');
-  if (earth) DOORS[era].forEach(([x, y], k) => { doors += ring(x, y, C.time, '', .14) + label(x + .5, y - .2, `→ ${ZONES['X' + doorDest(era, k)]}`, .7, C.time); });
+  // labels placed together so none covers another (the time doors of the first era stand two squares apart)
+  const items = places.map(pl => ({x: pl.x, y: pl.y, text: pl.tile === 10 ? 'Sign' : pl.map ? TYPES[typeOf(pl.map)] : '?', size: .8, color: '#f4efe0', layer: 'names'}));
+  if (earth) DOORS[era].forEach(([x, y], k) => { doors += ring(x, y, C.time, '', .14); items.push({x, y, text: `→ ${ZONES['X' + doorDest(era, k)]}`, size: .7, color: C.time, first: 'above', layer: 'doors'}); });
+  placeLabels(items).forEach((svg, i) => { if (items[i].layer === 'names') labels += svg; else doors += svg; });
   const svg = svgDoc(64, 64, g('names', labels) + (earth ? g('doors', doors) : '') + g('grid', gridLines(64, 64)));
 
   const cell = (x, y) => {
@@ -153,9 +155,13 @@ function renderTown(d, id) {
 
   const parts = {shops: '', locked: '', pickups: '', timedoors: '', talkers: '', start: ring(31, 62, C.start, '.18 .1')};
   const features = [];
+  // the letter I and the locked door are one tile (0xA0); Unlock takes any 0xA0 east or west of the party (decomp
+  // c/cmdmz.c CmdUnlock), so an I with nothing to stand on either side (inside a sign) is only a letter
+  const standable = (x, y) => x >= 0 && x < 64 && floor[y * 64 + x] < 0x78;
+  const isDoor = (x, y) => floor[y * 64 + x] === 0xA0 && (standable(x - 1, y) || standable(x + 1, y));
   for (let i = 0; i < 4096; i++) {
     const x = i & 63, y = i >> 6, c = floor[i];
-    if (c === 0xA0) { parts.locked += ring(x, y, C.door2); features.push({name: 'Locked door', x, y}); }
+    if (c === 0xA0 && isDoor(x, y)) { parts.locked += ring(x, y, C.door2); features.push({name: 'Locked door', x, y}); }
     if (c === 0x54 || c === 0x58) { parts.pickups += ring(x, y, C.pick, '.16 .1'); features.push({name: c === 0x54 ? 'Armour' : 'Weapon', x, y}); }
     if (c === 0xC0) { parts.timedoors += ring(x, y, C.time, '', .14); features.push({name: 'Time door', x, y}); }
   }
@@ -193,6 +199,7 @@ function renderTown(d, id) {
     if (c === 0x70) title = 'Floor';
     else if (c === 0x78) title = 'Wall';
     else if (c === 0x7C) title = 'Counter';
+    else if (c === 0xA0 && !isDoor(x, y)) [title, body] = ['Letter I', p('The same tile as a locked door, but with nowhere to stand east or west of it, no key can open it.')];
     else if (c === 0xA0) [title, body] = ['Locked door', p('Shown as the letter I. Unlock it with a key (guards carry keys), from the east or west only.')];
     else if (c === 0x54) [title, body] = ['Armour', p('Get it: 1 time in 4 it’s empty; otherwise cloth, leather or chain. Restocked on every visit.')];
     else if (c === 0x58) [title, body] = ['Weapon', p('Get it: 1 time in 8 it’s empty; otherwise anything from a dagger to a light sword. Restocked on every visit.')];

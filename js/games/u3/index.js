@@ -1,6 +1,6 @@
 // Ultima III: Sosaria, Ambrosia, the 12 townes and castles and the 7 dungeons, from the game files
 // (extracted to data/u3 by tools/extract-u3.mjs). Mechanics: u3-decompiled/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, centredGlyphs, tileLayer, scrollRows} from '../../lib/draw.js';
+import {placeLabels, esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, centredGlyphs, tileLayer, scrollRows} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u3/', import.meta.url);
 
@@ -82,6 +82,25 @@ function animatedMap(d, floor, people) {
   };
 }
 // The map with the people taken off (they are written into it, MonUnder holds the cell underneath).
+// A label in the game's own letters (U3's charset, character codes as the game prints them): the lit pixels in colour
+// with a black outline, as an SVG image 0.8 squares tall. For placeLabels: {w, h, svg(x, y)}.
+function glyphLabel(d, codes, color) {
+  if (!d.charsetPx) { const c = canvas(d.charset.width, d.charset.height), x = c.getContext('2d'); x.drawImage(d.charset, 0, 0); d.charsetPx = x.getImageData(0, 0, c.width, c.height).data; }
+  const px = d.charsetPx, sw = d.charset.width, W = codes.length * 8 + 2, H = 10, c = canvas(W, H), x = c.getContext('2d');
+  const lit = [];
+  codes.forEach((code, i) => { const sx = (code % 16) * 8, sy = (code >> 4) * 8; for (let yy = 0; yy < 8; yy++) for (let xx = 0; xx < 8; xx++) { const o = ((sy + yy) * sw + sx + xx) * 4; if (px[o] + px[o + 1] + px[o + 2] > 200) lit.push([1 + i * 8 + xx, 1 + yy]); } });
+  x.fillStyle = '#000'; for (const [a, b] of lit) x.fillRect(a - 1, b - 1, 3, 3);
+  x.fillStyle = color; for (const [a, b] of lit) x.fillRect(a, b, 1, 1);
+  const k = .8 / 8, url = c.toDataURL();
+  return {w: W * k, h: H * k, svg: (bx, by) => `<image href="${url}" x="${+bx.toFixed(3)}" y="${+by.toFixed(3)}" width="${+(W * k).toFixed(3)}" height="${+(H * k).toFixed(3)}" style="image-rendering:pixelated"/>`};
+}
+
+// whether the 0xB8 at (x, y) is a door: something can stand east or west of it (not water, mountains, walls, letters)
+function lockedDoor(floor) {
+  const standable = (x, y) => { if (x < 0 || x > 63) return false; const s = floor[y * 64 + x] >> 2; return s >= 1 && s <= 3 || s === 8 || s === 9 || (s >= 10 && s <= 31) || s === 32 || s === 33 || s === 34; };
+  return (x, y) => floor[y * 64 + x] === 0xB8 && (standable(x - 1, y) || standable(x + 1, y));
+}
+
 function floorOf(m) {
   const f = m.bytes.slice();
   for (const q of m.people) if (f[q.y * 64 + q.x] === q.tile) f[q.y * 64 + q.x] = q.under;
@@ -95,24 +114,29 @@ function renderWorld(d, key) {
   let names = '', gates = '', marks = '';
   const features = [];
   if (sosaria) {
-    // Labels go right of the icon, except where a neighbour would be covered.
-    const left = new Set(['MONTOR_W']), above = new Set(['TIME']);
-    const put = (key, name, x, y, color) => names += left.has(key) ? label(x - .08, y + .78, name, .8, color, 'end')
-      : above.has(key) ? label(x + .5, y - .2, name, .8, color) : label(x + 1.08, y + .78, name, .8, color, 'start');
-    for (const [file, name, x, y] of TOWNS) { put(file, name, x, y, '#f4efe0'); features.push({name, x, y}); }
-    for (const [file, name, x, y] of DUNGEONS) { put(file, name, x, y, '#ffb0a0'); features.push({name: `Dungeon: ${name}`, x, y}); }
-    GATES.forEach(([x, y], k) => { gates += ring(x, y, C.gate, '', .14) + label(x + .5, y - .2, `phase ${k}`, .7, C.gate); features.push({name: `Moon gate (phase ${k})`, x, y}); });
+    // labels placed together so none covers another; a gate's label is the game's own moon read-out (its font's moon
+    // symbol and the phase in brackets, as the top line of the screen shows it: decomp c/exodus/world.c Moons_Print)
+    const items = [];
+    for (const [, name, x, y] of TOWNS) { items.push({x, y, text: name, size: .8, color: '#f4efe0', layer: 'names'}); features.push({name, x, y}); }
+    for (const [, name, x, y] of DUNGEONS) { items.push({x, y, text: name, size: .8, color: '#ffb0a0', layer: 'names'}); features.push({name: `Dungeon: ${name}`, x, y}); }
+    GATES.forEach(([x, y], k) => { gates += ring(x, y, C.gate, '', .14); items.push({x, y, text: `(${k})`, size: .8, color: C.gate, first: 'above', layer: 'gates', glyphs: glyphLabel(d, [0x10, 0x28, 0x30 + k, 0x29], C.gate)}); features.push({name: `Moon gate (phase ${k})`, x, y}); });
+    placeLabels(items).forEach((svg, i) => { if (items[i].layer === 'names') names += svg; else gates += svg; });
     marks += ring(5, 58, C.talk, '.18 .1');
     features.push({name: 'Whirlpool (start)', x: 5, y: 58});
   } else {
-    for (const [x, y, attr] of SHRINES) { names += label(x + 1.08, y + .78, `Shrine of ${attr}`, .8, '#bff5c9', 'start'); features.push({name: `Shrine of ${attr}`, x, y}); }
+    names += placeLabels(SHRINES.map(([x, y, attr]) => ({x, y, text: `Shrine of ${attr}`, size: .8, color: '#bff5c9'}))).join('');
+    for (const [x, y, attr] of SHRINES) features.push({name: `Shrine of ${attr}`, x, y});
     marks += ring(32, 54, C.start, '.18 .1') + ring(32, 58, C.talk, '.18 .1');
     features.push({name: 'Where the whirlpool leaves you', x: 32, y: 54}, {name: 'Whirlpool (back to Sosaria)', x: 32, y: 58});
   }
   const svg = svgDoc(64, 64, g('names', names) + (sosaria ? g('gates', gates) : '') + g('marks', marks) + g('grid', gridLines(64, 64)));
 
+  const isDoor = lockedDoor(floor);
   const cell = (x, y) => {
     const s = floor[y * 64 + x] >> 2, links = [];
+    // the locked-door tile works on the surface too (Unlock checks only the tile): Ambrosia has 16
+    if (floor[y * 64 + x] === 0xB8) return isDoor(x, y) ? {title: 'Locked door', body: p('Shown as the letter I. Unlock it with a key, standing east or west of it.')}
+      : {title: 'Letter I', body: p('The same tile as a locked door, but with nowhere to stand east or west of it, no key can open it.')};
     if (sosaria) {
       const t = TOWNS.find(r => r[2] === x && r[3] === y), dn = DUNGEONS.find(r => r[2] === x && r[3] === y);
       if (t) {
@@ -174,7 +198,10 @@ function renderTown(d, key) {
     else if (sp) { parts.talkers += ring(q.x, q.y, C.talk); features.push({name: sp.replace(/\n/g, ' '), x: q.x, y: q.y}); }
     else features.push({name: shapeName(s), x: q.x, y: q.y});
   }
-  for (let i = 0; i < 4096; i++) if (floor[i] === 0xB8) { parts.locked += ring(i & 63, i >> 6, C.lock); features.push({name: 'Locked door', x: i & 63, y: i >> 6}); }
+  // the letter I and the locked door are one tile (0xB8); Unlock takes any 0xB8 east or west of the party (decomp
+  // c/exodus/loop.c CmdUnlock), so an I with nothing to stand on either side (inside a sign) is only a letter
+  const isDoor = lockedDoor(floor);
+  for (let i = 0; i < 4096; i++) if (floor[i] === 0xB8 && isDoor(i & 63, i >> 6)) { parts.locked += ring(i & 63, i >> 6, C.lock); features.push({name: 'Locked door', x: i & 63, y: i >> 6}); }
   const svg = svgDoc(64, 64, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(64, 64)));
   const exit = {label: 'Leave for Sosaria', map: 'SOSARIA', focus: [t[2], t[3]]};
 
@@ -189,7 +216,7 @@ function renderTown(d, key) {
       return {title: shop ? `Merchant: ${shop.service}` : shapeName(ks), body: body + p(MOVES[q.talk >> 6])};
     }
     let title = shapeName(s), body = '';
-    if (c === 0xB8) [title, body] = ['Locked door', p('Shown as the letter I. Unlock it with a key, standing east or west of it.')];
+    if (c === 0xB8) [title, body] = isDoor(x, y) ? ['Locked door', p('Shown as the letter I. Unlock it with a key, standing east or west of it.')] : ['Letter I', p('The same tile as a locked door, but with nowhere to stand east or west of it, no key can open it.')];
     else if (s === 9) body = p('A chest: gold, and maybe a weapon or armour. Restocked on every visit; some are trapped.');
     else if (TERRAIN_NOTE[s]) body = p(TERRAIN_NOTE[s]);
     if ((castle && x === 32 && y === 62) || (!castle && x === 1 && y === 32)) body += p('<b>You enter here.</b>');

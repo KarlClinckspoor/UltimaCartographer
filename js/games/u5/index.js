@@ -1,7 +1,7 @@
 // Ultima V: Britannia and the Underworld, the 32 settlements floor by floor, the 8 dungeons and their
 // rooms, from the game files (data/u5, by tools/extract-u5.mjs). Townsfolk stand where their schedule
 // puts them at the hour chosen, and show their whole conversation. Game logic: u5-decompiled/u5d/src.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, tileLayer, rnd, chain} from '../../lib/draw.js';
+import {placeLabels, esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, tileLayer, rnd, chain} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u5/', import.meta.url);
 
@@ -61,6 +61,9 @@ const FLAGS = {0x12: [0, 2, 16], 0x15: [0, 2, 16], 0x3E: [0, 2, 16], 0x14: [2, 4
 const fireMask = n => (n >= 0xB0 && n <= 0xB3) || (n >= 0xBC && n <= 0xBF) ? n + 0x10 : n === 0xDE ? 0xC2 : -1;
 const FIRE_KEYS = 64;
 // the tile a square of tile n shows after `tick` passes (AnimateTiles)
+// the eight moon phases, 0 new to 4 full and back (the game's MoonPhases: NewMoon = 0 ... FullMoon = 4)
+const MOON = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+
 function shownTile(n, tick) {
   const cycle = (base, k) => base + ((n - base + k) & 3);
   if (n >= 0xD4 && n <= 0xD7) return cycle(0xD4, tick);
@@ -197,15 +200,19 @@ async function renderBig(d, under) {
   // a place belongs on the map whose square there is a settlement or dungeon tile: Ararat and Doom lie in the Underworld,
   // and the same squares in Britannia are plain terrain (and the reverse for every other place)
   const places = d.places.filter(pl => PLACE_TILE.has(bytes[pl.y * W + pl.x]));
+  // labels placed together so none covers another (Lord British's castle and the two halves of Britanny sit side by
+  // side); a moongate's label is its moonstone's phase as a moon (0 new, 4 full)
+  const items = [];
   for (const pl of places) {
-    const col = pl.n > 32 ? '#ffb0a0' : '#f4efe0', small = pl.n >= 19 && pl.n <= 21;
-    parts.names += label(pl.x + (small ? .5 : 1.08), pl.y + (pl.n === 20 ? -.3 : pl.n === 19 || pl.n === 21 ? 1.7 : .78), pl.name, small ? .6 : .9, col, small ? 'middle' : 'start');
+    const small = pl.n >= 19 && pl.n <= 21;
+    items.push({x: pl.x, y: pl.y, text: pl.name, size: small ? .6 : .9, color: pl.n > 32 ? '#ffb0a0' : '#f4efe0', first: small ? 'above' : 'right', layer: 'names'});
     features.push({name: pl.name, x: pl.x, y: pl.y, detail: KIND(pl.n)});
   }
   const shrines = under ? [] : d.shrines.filter(s => s.x || s.y);
-  for (const s of shrines) { parts.shrines += label(s.x + 1.08, s.y + .78, `Shrine of ${s.virtue}`, .8, C.shrine, 'start'); features.push({name: `Shrine of ${s.virtue}`, x: s.x, y: s.y, detail: 'shrine'}); }
+  for (const s of shrines) { items.push({x: s.x, y: s.y, text: `Shrine of ${s.virtue}`, size: .8, color: C.shrine, layer: 'shrines'}); features.push({name: `Shrine of ${s.virtue}`, x: s.x, y: s.y, detail: 'shrine'}); }
   const gates = d.moonstones.map((m, i) => ({...m, i})).filter(m => m.buried && m.under === under);
-  for (const m of gates) { parts.gates += ring(m.x, m.y, C.gate, '', .14); features.push({name: `Moongate (phase ${m.i})`, x: m.x, y: m.y}); }
+  for (const m of gates) { parts.gates += ring(m.x, m.y, C.gate, '', .14); items.push({x: m.x, y: m.y, text: `${MOON[m.i]} ${m.i}`, size: 1, color: C.gate, first: 'above', layer: 'gates'}); features.push({name: `Moongate (${MOON[m.i]} phase ${m.i})`, x: m.x, y: m.y}); }
+  placeLabels(items).forEach((svg, i) => { parts[items[i].layer] += svg; });
   const signs = d.signs.filter(s => s.loc === 0 && s.floor === floor);
   for (const s of signs) { parts.signs += ring(s.x, s.y, C.sign, '.12 .08', .1); features.push({name: s.text.replace(/\n/g, ' '), x: s.x, y: s.y, detail: 'sign'}); }
   const hidden = hiddenAt(d, 0, floor);

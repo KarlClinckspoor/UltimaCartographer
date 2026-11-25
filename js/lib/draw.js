@@ -11,6 +11,32 @@ export const ring = (x, y, color, dash = '', w = .1) =>
   `<rect x="${x + .06}" y="${y + .06}" width=".88" height=".88" rx=".12" fill="none" stroke="${color}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
 export const label = (x, y, text, size, color = '#f4efe0', anchor = 'middle') =>
   `<text x="${f(x)}" y="${f(y)}" font-size="${size}" font-family="Georgia, serif" text-anchor="${anchor}" fill="${color}" stroke="#000" stroke-width="${f(size / 6)}" paint-order="stroke" stroke-linejoin="round">${esc(text)}</text>`;
+// Labels that keep out of each other's way. Each item: {x, y (its square), text, size, color, first?: 'right' | 'above'};
+// it goes in the first of these spots that overlaps no label or marked square placed before it: right of the square,
+// left, above, below, then rows further above and below (with a thin line back to the square). Returns one SVG
+// string per item, in order, so the caller can put each in its own layer.
+export function placeLabels(items) {
+  const boxes = items.map(it => [it.x, it.y, it.x + 1, it.y + 1]);   // the marked squares themselves
+  const area = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  return items.map((it, i) => {
+    const s = it.size, w = it.text.length * s * .5 + s * .3, h = s * 1.1, img = it.glyphs;   // img: a picture label {w, h, svg(x, y)}
+    const W = img ? img.w : w, H = img ? img.h : s;
+    const right = [it.x + 1.08, it.y + .5 + H * .35, 'start'], left = [it.x - .08, it.y + .5 + H * .35, 'end'];
+    const above = [it.x + .5, it.y - .2, 'middle'], below = [it.x + .5, it.y + 1.05 + H * .8, 'middle'];
+    const cands = (it.first === 'above' ? [above, below, right, left] : [right, left, above, below]);
+    for (let k = 1; k <= 4; k++) cands.push([it.x + .5, it.y - .2 - k * h, 'middle', 1], [it.x + .5, it.y + 1.05 + H * .8 + k * h, 'middle', 1]);
+    let best = null, least = Infinity;
+    for (const c of cands) {
+      const x0 = c[2] === 'start' ? c[0] : c[2] === 'end' ? c[0] - W : c[0] - W / 2, box = [x0, c[1] - H * .8, x0 + W, c[1] + H * .2];
+      const o = boxes.reduce((sum, b, j) => sum + (j === i ? 0 : area(box, b)), 0);
+      if (o < least) { least = o; best = [c, box]; if (!o) break; }
+    }
+    const [[lx, ly, anchor, lead], box] = best;
+    boxes.push(box);
+    const line = lead ? path(ly < it.y ? `M${f(it.x + .5)} ${f(box[3])}V${f(it.y)}` : `M${f(it.x + .5)} ${f(box[1])}V${f(it.y + 1)}`, it.color, s / 14, 'opacity=".7"') : '';
+    return line + (img ? img.svg(box[0], box[1]) : label(lx, ly, it.text, s, it.color, anchor));
+  });
+}
 export function gridLines(w, h) {
   let d = '';
   for (let x = 1; x < w; x++) d += `M${x} 0V${h}`;

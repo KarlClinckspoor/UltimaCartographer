@@ -1,7 +1,7 @@
 // Ultima IV: Britannia, the 16 castles, townes and villages (and Lord British's upper floor), the 8
 // dungeons with their rooms, from the game files (data/u4, by tools/extract-u4.mjs). Townsfolk show
 // their whole conversation. Mechanics: u4-decompiled-port/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs, tileLayer, scrollRows, rnd, chain} from '../../lib/draw.js';
+import {placeLabels, esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs, tileLayer, scrollRows, rnd, chain} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u4/', import.meta.url);
 
@@ -71,6 +71,9 @@ const FIRE = [[7, 0x0C, 0x00], [8, 0x0D, 0x80], [9, 0x1F, 0xC0], [10, 0x1F, 0xC0
 const FIRE_KEYS = 64;
 const EGA_RGB = ['000000', '0000aa', '00aa00', '00aaaa', 'aa0000', 'aa00aa', 'aa5500', 'aaaaaa', '555555', '5555ff', '55ff55', '55ffff', 'ff5555', 'ff55ff', 'ffff55', 'ffffff'];
 const animated = [...FLOW, ...Object.keys(FLAGS).map(Number), 0x4B];
+// the eight phases of a moon, 0 new to 4 full and back (decomp: both moons start new, at 0)
+const MOON = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+
 function frame(n, tick) {
   if (!tick) return 0;
   if (FLOW.includes(n)) return Math.floor(tick / SPEED) % 16;
@@ -144,12 +147,15 @@ async function renderWorld(d) {
   const W = 256;
   let names = '', gates = '', items = '';
   const features = [];
+  // labels placed together so none covers another; a moongate's label is Trammel's phase as a moon (0 new, 4 full)
+  const labs = [];
   for (const pl of d.places) {
     if (pl.n === 31) continue;   // Spirituality shares Humility's square in the table; it is reached by moongate
-    names += label(pl.x + 1.08, pl.y + .78, pl.name.replace(/!$/, ''), .9, kindOf(pl.n) === 'dungeon' ? '#ffb0a0' : kindOf(pl.n) === 'shrine' ? '#bff5c9' : '#f4efe0', 'start');
+    labs.push({x: pl.x, y: pl.y, text: pl.name.replace(/!$/, ''), size: .9, color: kindOf(pl.n) === 'dungeon' ? '#ffb0a0' : kindOf(pl.n) === 'shrine' ? '#bff5c9' : '#f4efe0', layer: 'names'});
     features.push({name: pl.name.replace(/!$/, ''), x: pl.x, y: pl.y, detail: kindOf(pl.n)});
   }
-  d.moongates.forEach(([x, y], k) => { gates += ring(x, y, C.gate, '', .14) + label(x + .5, y - .25, `Trammel ${k}`, .75, C.gate); features.push({name: `Moongate (Trammel phase ${k})`, x, y}); });
+  d.moongates.forEach(([x, y], k) => { gates += ring(x, y, C.gate, '', .14); labs.push({x, y, text: `${MOON[k]} ${k}`, size: 1, color: C.gate, first: 'above', layer: 'gates'}); features.push({name: `Moongate (Trammel ${MOON[k]} phase ${k})`, x, y}); });
+  placeLabels(labs).forEach((svg, i) => { if (labs[i].layer === 'names') names += svg; else gates += svg; });
   for (const [loc, x, y, what] of SEARCH) if (!loc) { items += ring(x, y, C.item, '.16 .1', .12); features.push({name: what, x, y, detail: 'search'}); }
   const svg = svgDoc(W, W, g('names', names) + g('gates', gates) + g('items', items) + g('grid', gridLines(W, W)));
   const cell = (x, y) => {
