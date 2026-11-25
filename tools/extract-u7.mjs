@@ -3,7 +3,8 @@
 // (U7IFIX) and movable (INITGAME.DAT u7ireg) objects as compact records, and only the shape frames the
 // map uses, packed into atlas pages.
 // Usage: node tools/extract-u7.mjs <u7si|u7bg> <STATIC folder>
-// Formats: Exult (gamemap.cc get_ifix_chunk_objects / read_ireg_objects, shapes/vgafile.cc, gamedat.cc).
+// Formats: Exult (gamemap.cc get_ifix_chunk_objects / read_ireg_objects, shapes/vgafile.cc, gamedat.cc), checked against
+// the decomp (../Ultima7_Decomp: main/vitem.c IfixEntry, common/itemovr1.c ReadItemRecord, include/iteminfo.h).
 import {readFileSync, writeFileSync, mkdirSync, existsSync, rmSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -26,14 +27,14 @@ function flex(b) {
 const palFlex = file('PALETTES.FLX'), [po] = flex(palFlex)[0];
 const PAL = Array.from({length: 256}, (_, i) => [0, 1, 2].map(k => Math.min(255, palFlex[po + i * 3 + k] * 4)));
 
-// ---------- translucency: in a shape TFA.DAT marks translucent (blood, water, glass, fields), colours 0xF4-0xFE are
-// not colours but blends with what lies beneath, each through a table of XFORM.TBL: colour 0xF4 + k uses entry 10 - k
-// (Exult shapeid.cc). The atlas can only hold a colour and an alpha, so each table is fitted as the blend
+// ---------- translucency: in a shape TFA.DAT marks translucent (blood, water, glass, fields), colours 0xEE-0xFE are
+// not colours but blends with what lies beneath, each through a table of XFORM.TBL: colour c uses entry 254 - c
+// (decomp common/xformtbl.c, main/bltshape.c: 17 tables). The atlas can only hold a colour and an alpha, so each table is fitted as the blend
 // out = a * tint + (1 - a) * beneath that comes nearest it over the palette's fixed colours.
 const XF = (() => {
   const b = file('XFORM.TBL'), e = flex(b), out = [];
-  for (let k = 0; k < 11; k++) {
-    const [o] = e[10 - k];
+  for (let k = 0; k < 17; k++) {
+    const [o] = e[16 - k];
     let best = null;
     for (let a = 0.05; a <= 0.95; a += 0.01) {
       const T = [0, 1, 2].map(c => { let s = 0; for (let d = 0; d < 224; d++) s += (PAL[b[o + d]][c] - (1 - a) * PAL[d][c]) / a; return Math.max(0, Math.min(255, Math.round(s / 224))); });
@@ -89,6 +90,14 @@ function frame(sh, fr) {
     }
   }
   return {w, h, xleft, yabove, px};
+}
+
+// how many frames a shape has (flats: 64 bytes a frame; others: the frame table in the header)
+function frameCount(sh) {
+  const [off, len] = shapeEntries[sh] || [0, 0];
+  if (!len) return 0;
+  const dlen = shapes.readUInt32LE(off), rle = dlen === len || (!(len & 1) && dlen === len - 1);
+  return rle ? (shapes.readUInt32LE(off + 4) - 4) / 4 : Math.floor(len / 64);
 }
 
 // ---------- the map ----------
@@ -152,21 +161,23 @@ for (let sc = 0; sc < 144; sc++) {
 }
 for (const o of objs) if (cls(o.s) !== 7) used.add(key(o.s, o.f));
 
-// NPCs (npc.dat in INITGAME.DAT): counts of NPCs and monsters, then each: x, y in its superchunk (chunk in the
-// high nibble, tile in the low), shape | frame << 10, inventory flag, superchunk, map, usecode (lift in the top
-// 4 bits) ... 101 bytes, a 16-byte name, then its inventory as IREG entries up to an end mark (Exult actorio.cc).
+// NPCs (npc.dat in INITGAME.DAT; decomp common/itemovr2.c, main/u7npc.h): counts of NPCs and monsters, then 117-byte
+// records: x, y in the superchunk (chunk in the high nibble, tile in the low), shape | frame << 10, then the item's extra
+// record (contents link, superchunk, quality, flags, z in the high nibble of byte 9, ...), then the NPC buffer (its
+// ref at 14, status at 16, work type at 22, name at 101). A record whose ref is 0 is an empty slot; an inventory
+// follows (IREG entries up to an end mark) only when the ref, the shape and the contents link are all set.
 const npcs = [];
 {
   const b = files['npc.dat'], total = b.readUInt16LE(0) + b.readUInt16LE(2);
   let p = 4;
   for (let n = 0; n < total && p + 117 <= b.length; n++) {
-    const r = b.subarray(p, p + 117), sc = r[6], sf = r.readUInt16LE(2), inv = r.readUInt16LE(4) !== 0;   // a new game's file: any value means an inventory follows (actorio.cc fix_first)
+    const r = b.subarray(p, p + 117), sc = r[6], sf = r.readUInt16LE(2), ref = r.readUInt16LE(14), inv = ref && (sf & 0x3FF) && r.readUInt16LE(4);
     const nm = r.subarray(101, 117).toString('latin1').replace(/\0.*$/s, '').trim();
     const x = ((sc % 12) * 16 + (r[0] >> 4)) * 16 + (r[0] & 15), y = (Math.floor(sc / 12) * 16 + (r[1] >> 4)) * 16 + (r[1] & 15);
     p += 117;
     let inventory = null;
     if (inv) { const r2 = iregEntries(b, p, true); p = r2.p; if (r2.top.length) inventory = r2.top; }   // entries until a 0 or 1 at depth 0
-    if ((sf & 0x3FF) && (x || y)) { npcs.push({n, name: nm, x, y, z: r.readUInt16LE(8) >> 12, sf, ...(inventory ? {inv: tree(inventory)} : {})}); used.add(key(sf & 0x3FF, sf >> 10)); }
+    if (ref && (sf & 0x3FF) && (x || y)) { npcs.push({n, name: nm, x, y, z: r[9] >> 4, sf, wt: r[22], st: r.readUInt16LE(16), ...(inventory ? {inv: tree(inventory)} : {})}); used.add(key(sf & 0x3FF, sf >> 10)); }
   }
 }
 // schedule.dat (INITGAME.DAT): NPC count (the Avatar not counted), word offsets, then 4-byte entries:
@@ -183,6 +194,22 @@ const npcs = [];
     }
     if (list.length) npc.sched = list;
   }
+}
+
+// ---------- animation ----------
+// TFA.DAT: bit 2 of a shape's first byte marks it animated; after the 3072 bytes, 512 more give each shape an animation
+// kind, two a byte, odd shapes in the high nibble (decomp BG U7/common/type.c: LoadTfa, GetTypeAnimation). The map
+// cycles through all of an animated shape's frames, so all of them go in the atlas.
+const animated = s => (tfa[s * 3] & 4) !== 0;
+const animKind = s => tfa.length >= 3584 ? (s & 1 ? tfa[3072 + (s >> 1)] >> 4 : tfa[3072 + (s >> 1)] & 15) : 0;
+const anim = {};   // shape: [kind, frames], for the animated shapes on the map
+for (const k of [...used]) {
+  const s = k >> 6;
+  if (!animated(s) || anim[s]) continue;
+  const n = frameCount(s);
+  if (n < 2) continue;
+  anim[s] = [animKind(s), Math.min(n, 32)];
+  for (let f = 0; f < Math.min(n, 32); f++) used.add(key(s, f));
 }
 
 // ---------- atlas: the used frames, shelf-packed into 2048 x 2048 pages ----------
@@ -202,7 +229,7 @@ for (const fr of frames) {
     const c = fr.px[y * fr.w + x];
     if (c < 0 || c === 255) continue;
     const o = ((sy + y) * PAGE + sx + x) * 4;
-    if (clear && c >= 0xF4) [page[o], page[o + 1], page[o + 2], page[o + 3]] = XF[c - 0xF4];
+    if (clear && c >= 0xEE) [page[o], page[o + 1], page[o + 2], page[o + 3]] = XF[c - 0xEE];
     else { [page[o], page[o + 1], page[o + 2]] = PAL[c]; page[o + 3] = 255; }
   }
   sx += fr.w; shelf = Math.max(shelf, fr.h);
@@ -227,9 +254,13 @@ for (const [j, fr] of frames.entries()) {
 writeFileSync(join(out, 'frames.bin'), fb);
 writeFileSync(join(out, 'map.bin'), u7map);
 writeFileSync(join(out, 'chunks.bin'), chunks);
-// objects.bin: 10 bytes each, sorted by y then x: x, y (uint16), lift, flags (1 fixed, 2 not drawn), shape | frame << 10,
-// quality (a lock's and its key's number; a stack's count), 0
-objs.sort((a, b) => a.y - b.y || a.x - b.x);
+// objects.bin: 10 bytes each: x, y (uint16), lift, flags (1 fixed, 2 not drawn), shape | frame << 10, quality (a lock's
+// and its key's number; a stack's count), 0. Grouped by chunk, each chunk's in the order the game loads them: the movable
+// objects as the region file lists them, then the fixed ones as U7IFIX does (decomp: common/loadreg.c LoadRegion, then
+// main/vitem.c LoadChunkItems). The game's drawing order starts from that order.
+objs.forEach((o, i) => { o.n = i; });
+const chunkOf = o => (o.y >> 4) * 192 + (o.x >> 4);
+objs.sort((a, b) => chunkOf(a) - chunkOf(b) || a.fixed - b.fixed || a.n - b.n);
 const R = 10, ob = Buffer.alloc(objs.length * R);
 objs.forEach((o, i) => { const k = i * R; ob.writeUInt16LE(o.x, k); ob.writeUInt16LE(o.y, k + 2); ob[k + 4] = o.z; ob[k + 5] = o.fixed | (cls(o.s) === 7 ? 2 : 0); ob.writeUInt16LE(o.s | o.f << 10, k + 6); ob[k + 8] = o.q; });
 writeFileSync(join(out, 'objects.bin'), ob);
@@ -240,10 +271,10 @@ writeFileSync(join(out, 'contents.json'), JSON.stringify(contents));
 const text = file('TEXT.FLX'), names = flex(text).slice(0, 1024).map(([o, len]) => text.subarray(o, o + len).toString('latin1').replace(/\0.*$/s, ''));
 // frame names: some shapes name each frame (food, reagents, amulets, desk items, Serpent Isle's keys); the names are
 // TEXT.FLX's misc names (from entry 0x500), which frame has which from the Exult team's tables (tools/u7-framenames.json)
-const textAt = i => { const [o, len] = flex(text)[i] || [0, 0]; return text.subarray(o, o + len).toString('latin1').replace(/ .*$/s, ''); };
+const textAt = i => { const [o, len] = flex(text)[i] || [0, 0]; return text.subarray(o, o + len).toString('latin1').replace(/\0.*$/s, ''); };
 const frameNames = {};
 for (const [s, f, m] of JSON.parse(readFileSync(new URL('./u7-framenames.json', import.meta.url)))[id] || []) frameNames[s * 64 + f] = textAt(0x500 + m);
-writeFileSync(join(out, `${id}.json`), JSON.stringify({names, frameNames, tfa: [...tfa], pages: pages.length, lastH, npcs}));
+writeFileSync(join(out, `${id}.json`), JSON.stringify({names, frameNames, tfa: [...tfa.subarray(0, 3072)], anim, pages: pages.length, lastH, npcs}));
 const kb = n => `${Math.round(n / 1024)} KB`;
 console.log(`${id}: ${usedChunks.size} chunks used, ${objs.length} objects (${iregCount} movable), ${frames.length} frames in ${pages.length} atlas pages`);
 console.log(`sizes: chunks ${kb(chunks.length)}, map ${kb(u7map.length)}, objects ${kb(ob.length)}, frames table ${kb(fb.length)}`);

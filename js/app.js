@@ -30,9 +30,13 @@
 //     coords(x, y) -> string,           the game's own coordinates for a square (a sextant's reading), shown
 //                                       beside x, y in the readout and the popup
 //     info,                             html for the side panel
-//     draw(canvas, x0, y0, span, off),  for maps too big for images: draws squares x0..x0+span,
+//     draw(canvas, x0, y0, span, off, tick), for maps too big for images: draws squares x0..x0+span,
 //                                       y0..y0+span into a 256-pixel canvas (may return a Promise);
-//                                       off = Set of layer ids switched off; called again when it changes
+//                                       off = Set of layer ids switched off; called again when it changes;
+//                                       tick = the animation clock (0 when animation is off)
+//     animate: {ms},                    the map has animated pictures: draw() is called again for the
+//                                       tiles in view every ms milliseconds with the next tick, while
+//                                       the sidebar's Animation switch is on
 //     wrap,                             true when walking off an edge comes back at the opposite one:
 //                                       arrows outside the map say so
 //   }
@@ -191,12 +195,13 @@ async function show({focus, initialView, keepView} = {}) {
       createTile(c, done) {
         const cv = document.createElement('canvas'), span = 256 / 2 ** c.z;
         cv.width = cv.height = 256;
-        Promise.resolve().then(() => v.draw(cv, c.x * span, c.y * span, span, hidden[game.id] || new Set())).then(() => done(null, cv), e => { console.error(e); done(e, cv); });
+        Promise.resolve().then(() => v.draw(cv, c.x * span, c.y * span, span, hidden[game.id] || new Set(), animOn && v.animate ? animTick : 0)).then(() => done(null, cv), e => { console.error(e); done(e, cv); });
         return cv;
       },
     });
     drawLayer = new Layer({tileSize: 256, bounds, noWrap: true, minZoom: -10, maxNativeZoom: Math.log2(view.native || 16), className: 'pixel-tile', keepBuffer: 1}).addTo(map);
   }
+  animate();   // start or stop the animation clock for this map
   // Pixel art: crisp when drawn at its own size or bigger, smoothed when shrunk.
   const first = view.images?.[0]?.src;
   nativeZoom = view.native ? Math.log2(view.native) : first instanceof HTMLCanvasElement ? Math.log2(first.width / view.width) : null;
@@ -266,10 +271,17 @@ function drawPanel() {
   const off = hidden[game.id] ||= new Set();
   const seen = seenLayers[game.id] ||= new Set();
   for (const l of view.layers) if (!seen.has(l.id)) { seen.add(l.id); if (l.on === false) off.add(l.id); }
-  $('#layers').innerHTML = view.layers.map(l => `
+  $('#layers').innerHTML = (view.animate ? `<li><label><input type="checkbox" id="animate" ${animOn ? 'checked' : ''}><span>Animation</span></label></li>` : '') + view.layers.map(l => `
     <li><label><input type="checkbox" data-layer="${l.id}" ${off.has(l.id) ? '' : 'checked'}>
       ${l.swatch || ''}<span>${esc(l.name)}</span></label></li>`).join('');
-  for (const c of document.querySelectorAll('#layers input')) c.onchange = () => {
+  if (view.animate) $('#animate').onchange = e => {
+    animOn = e.target.checked;
+    try { localStorage.setItem('animate', animOn ? '1' : '0'); } catch {}
+    if (!animOn) { animTick = 0; drawLayer?.redraw(); }   // back to the first frame
+    animate();
+  };
+  animate();
+  for (const c of document.querySelectorAll('#layers input[data-layer]')) c.onchange = () => {
     if (c.checked) off.delete(c.dataset.layer); else off.add(c.dataset.layer);
     applyLayers();
   };
@@ -283,6 +295,29 @@ function drawPanel() {
     go({mapId: l.map, params: l.params, focus: l.focus});
   };
   search();
+}
+
+// ---------- animation ----------
+// The sidebar's Animation switch (remembered; off by default for visitors who ask their system for less motion),
+// and the clock that redraws an animated map's tiles in view.
+let animOn = (() => { try { const v = localStorage.getItem('animate'); if (v !== null) return v === '1'; } catch {} return !matchMedia('(prefers-reduced-motion: reduce)').matches; })();
+let animTimer = null, animTick = 0, animBusy = false;
+function animate() {
+  clearInterval(animTimer); animTimer = null;
+  if (!animOn || !view?.animate || !drawLayer) return;
+  const v = view, layer = drawLayer;
+  animTimer = setInterval(() => {
+    if (animBusy || document.hidden || view !== v || drawLayer !== layer) return;
+    animTick++;
+    const off = hidden[state.game.id] || new Set(), jobs = [];
+    for (const t of Object.values(layer._tiles || {})) {
+      if (!t.current || !t.el) continue;
+      const span = 256 / 2 ** t.coords.z;
+      jobs.push(Promise.resolve().then(() => v.draw(t.el, t.coords.x * span, t.coords.y * span, span, off, animTick)));
+    }
+    animBusy = true;
+    Promise.allSettled(jobs).then(() => { animBusy = false; });
+  }, v.animate.ms || 150);
 }
 
 const sliderText = (d, v) => d.key === 'hour' ? `${String(v).padStart(2, '0')}:00` : String(v);

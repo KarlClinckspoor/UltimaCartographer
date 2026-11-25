@@ -1,7 +1,7 @@
 // Ultima II: every map of every era and planet, from the game files (extracted to data/u2 by
 // tools/extract-u2.mjs). Nothing in Ultima II is random at map level: towers and dungeons too are
 // stored in the files. Mechanics: u2-decompiled/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json} from '../../lib/draw.js';
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, image, json, tileLayer, scrollRows} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u2/', import.meta.url);
 
@@ -52,7 +52,7 @@ let loading = null;
 const load = () => loading ||= (async () => {
   const [d, tiles] = await Promise.all([json(new URL('u2.json', DATA), 'run tools/extract-u2.mjs'), image(new URL('tiles.png', DATA))]);
   for (const m of Object.values(d.maps)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
-  d.tiles = tiles; d.png = {};
+  d.tiles = tiles;
   return d;
 })();
 let maps = null;   // the map ids, once loaded (for the map list)
@@ -74,11 +74,19 @@ function placesOf(d, zone) {
   return out;
 }
 
-function tileImage(d, id, cells) {
-  if (d.png[id]) return d.png[id];
-  const c = canvas(64 * 16, 64 * 16), ctx = c.getContext('2d');
-  for (let i = 0; i < 4096; i++) blit(ctx, d.tiles, 16, tileOf(cells[i]), i & 63, i >> 6);
-  return d.png[id] = c.toDataURL();
+// ---------- animation (c/main.c MainLoop, c/screen.c) ----------
+// At every "CMD:" prompt, and every 256 keyboard polls while it waits, the water's picture scrolls up 4 pixel rows
+// (AnimateWater, 4 times) and the force field's up 1 (AnimateForceField; RotateTileUp: the top row comes back at
+// the bottom), and UpdateMapView redraws the window. Nothing else moves. How long 256 polls take depends on the
+// machine; roughly 70 ms under GOG's DOSBox (cycles=500), an estimate.
+const STEP_MS = 70, SCROLL = {0x00: 4, 0x17: 1};
+function animatedMap(d, cells, people = []) {
+  return {
+    native: 16, animate: {ms: STEP_MS},
+    draw: tileLayer({w: 64, h: 64, sheet: d.tiles, at: (x, y) => tileOf(cells[y * 64 + x]), animated: [0x00, 0x17],
+      frame: (n, tick) => SCROLL[n] ? (tick * SCROLL[n]) % 16 : 0, picture: (n, key, ctx) => scrollRows(ctx, 16, 16 - key),
+      sprites: people.map(q => ({x: q.x, y: q.y, tile: tileOf(q.tile)})), spriteLayer: 'people'}),
+  };
 }
 
 // ---------- surfaces ----------
@@ -125,7 +133,7 @@ function renderSurface(d, id) {
       <p class="muted">The surface wraps around at every edge.</p>`;
   return {
     title: ZONES[zone], subtitle: earth ? 'Earth' : `Planet · warp ${WARP[planet]}`, width: 64, height: 64,
-    images: [{src: tileImage(d, id, m.bytes)}], svg, cell, features, info,
+    ...animatedMap(d, m.bytes), svg, cell, features, info,
     layers: [
       {id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       ...(earth ? [{id: 'doors', name: 'Time door spots', swatch: swatch(ring(0, 0, C.time, '', .14))}] : []),
@@ -141,9 +149,6 @@ function renderTown(d, id) {
   const people = (m.people || []).filter(q => q.x < 64 && q.y < 64);
   const floor = m.bytes.slice();
   for (const q of people) if (floor[q.y * 64 + q.x] === q.tile) floor[q.y * 64 + q.x] = q.under;   // people are stamped into the map
-  const base = tileImage(d, id, floor);
-  const ppl = canvas(64 * 16, 64 * 16), pctx = ppl.getContext('2d');
-  for (const q of people) blit(pctx, d.tiles, 16, tileOf(q.tile), q.x, q.y);
   const talk = q => q.mood >= 0x80 ? ((m.talk || [])[q.mood - 0x81] || '').replace(/:(?=\S)/, ': ') || null : null;
 
   const parts = {shops: '', locked: '', pickups: '', timedoors: '', talkers: '', start: ring(31, 62, C.start, '.18 .1')};
@@ -216,7 +221,7 @@ function renderTown(d, id) {
   if (parts.timedoors) layers.push({id: 'timedoors', name: 'Time doors', swatch: swatch(ring(0, 0, C.time, '', .14))});
   layers.push({id: 'start', name: 'Where you enter', swatch: swatch(ring(0, 0, C.start, '.18 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false});
   return {title: titleOf(id), subtitle: zone[0] === 'X' ? 'Earth' : ZONES[zone], width: 64, height: 64,
-    images: [{src: base}, {src: ppl.toDataURL(), layer: 'people'}], svg, cell, features, info, layers};
+    ...animatedMap(d, floor, people), svg, cell, features, info, layers};
 }
 
 // ---------- towers and dungeons ----------

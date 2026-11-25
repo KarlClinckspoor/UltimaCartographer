@@ -87,9 +87,14 @@ for (let t = 0; t < 0x800; t++) {
 }
 // ANIMDATA: count, then 32 tile numbers, 32 first frames, 32 masks, 32 shifts (main.c); an animated tile
 // shows its first frame's pixels (the water tiles have none of their own).
+const own = pixels.slice(), animData = [];
 if (has('ANIMDATA')) {
   const a = file('ANIMDATA'), n = a.readUInt16LE(0);
-  for (let i = 0; i < n; i++) { const t = a.readUInt16LE(2 + i * 2), f = a.readUInt16LE(66 + i * 2); if (t < 0x800 && f < 0x800) pixels[t] = pixels[f]; }
+  for (let i = 0; i < n; i++) {
+    const t = a.readUInt16LE(2 + i * 2), f = a.readUInt16LE(66 + i * 2);
+    animData.push([t, f, a[130 + i], a[162 + i]]);
+    if (t < 0x800 && f < 0x800) pixels[t] = pixels[f];
+  }
 }
 const avg = [];   // each tile's average colour and coverage, for drawing far zoomed out
 for (let t = 0; t < 0x800; t++) {
@@ -172,5 +177,55 @@ if (dialogue && existsSync(dialogue)) {
   }
 }
 
-writeFileSync(join(out, `${game}.json`), JSON.stringify({game, pal: PAL, avg, terrain, tileFlag, tileFlag2, baseTile, look, books, schedule, talk, fmt: [...fmt]}));
+// ---------- animation: what the browser needs to animate the map as the game does ----------
+// Each display tick (DisplayTick, gameloop.c) AnimateTilesAndActors adds 1 to AnimFrameCounter and every ANIMDATA
+// entry i whose StateAnimData[i] is 1 shows tile AnimFirstFrame[i] + ((counter & AnimFrameMask[i]) >> AnimFrameShift[i])
+// (GR_SET_ANIM_FRAME); state 0 keeps the first frame. Ultima VI then, on even counts, copies the water tiles' pixels
+// into the shore tiles 10h-2Fh through ANIMMASK.VGA (GR_ANIMATE_TILES, docs/port/MCGA_DRIVER.md entry 3Fh). Beside
+// it PaletteAnimation (main.c of all three) cycles colours E0h-FBh and pulses FFh.
+// The state at the start of a game (GAME_Load, console.c of each game):
+//   Ultima VI: chains, cranks and bells are still until used.
+//   The Savage Empire: everything runs.
+//   Martian Dreams: the power-driven machines (tiles of types BCh, BFh, 1B0h, 1B3h) are still unless TalkFlags[73h]
+//   bit 2; the canals (IsWaterTile: 10h-17h, C0h-C3h), tiles 1-4 and the clocks (type 62h) get mask 0. The clocks
+//   show the hour: DrawSkyBar (gfx.c) sets their first frame to 1A0h + hour % 12.
+const animOut = {ms: game === 'u6' ? 55 : 63, tiles: [], pix: {}, dyn: []};
+{
+  const isAnim = new Set(animData.map(e => e[0]));
+  const objlist0 = dngblk.subarray(o);
+  const mdFlags = n => objlist0[0x18F1 + n];   // TalkFlags in the objlist (GAME_Load's reads)
+  const still = t => game === 'u6' ? [0x3F1, 0x3FC, baseTile[0xEC]].includes(t)
+    : game === 'md' ? (!(mdFlags(0x73) & 4) && [0xBC, 0xBF, 0x1B0, 0x1B3].some(ty => t >= baseTile[ty] && t < baseTile[ty + 1]))
+      || (t >= 0x10 && t <= 0x17) || (t >= 0xC0 && t <= 0xC3) || (t >= 1 && t <= 4) || t === baseTile[0x62] : false;
+  if (game === 'md') animOut.clock = {tile: baseTile[0x62], first: 0x1A0};
+  const need = new Set(), dyn = new Set();
+  const cycles = px => px.some(c => (c >= 0xE0 && c <= 0xFB) || c === 0xFF);
+  for (const [t, first, mask, shift] of animData) {
+    if (still(t) || !mask) continue;
+    animOut.tiles.push([t, first, mask, shift]);
+    dyn.add(t);
+    for (let k = 0; k <= mask >> shift; k++) need.add(first + k);
+  }
+  if (game === 'u6') {
+    // the driver's table at 2C00h (port/gfx/mcga.c init_animsrc): the water tile each shore tile copies
+    const src = [0x0B, 0x0B, 0x0D, 0x0D, 0x0F, 0x0F, 0x09, 0x09, 0x0D, 0x0F, 0x0B, 0x09, 0x0B, 0x0D, 0x0F, 0x09,
+      0x0D, 0x0F, 0x0F, 0x09, 0x09, 0x0B, 0x0B, 0x0D, 0x09, 0x0B, 0x0F, 0x0D, 0x0D, 0x0F, 0x09, 0x0B];
+    const masks = unpack(file('ANIMMASK.VGA'));
+    animOut.shore = {first: 0x10, src, masks: masks.subarray(0, 32 * 64).toString('base64')};
+    for (let k = 0; k < 32; k++) { dyn.add(0x10 + k); need.add(0x10 + k); }
+  }
+  // tiles whose colours cycle (in any frame they show)
+  for (let t = 0; t < 0x800; t++) if (!dyn.has(t) && cycles(pixels[t])) { dyn.add(t); need.add(t); }
+  for (const t of need) if (isAnim.has(t) && !still(t) && animOut.tiles.some(e => e[1] <= t && t <= e[1] + (e[2] >> e[3]))) throw new Error(`frame ${t} is itself animated`);
+  // pixels: 256 palette indexes, then 32 bytes of opacity bits (a frame's own pixels; a still animated tile's are its first frame's)
+  for (const t of [...need].sort((a, b) => a - b)) {
+    const px = isAnim.has(t) ? pixels[t] : own[t], b = Buffer.alloc(288);
+    for (let i = 0; i < 256; i++) if (px[i] >= 0) { b[i] = px[i]; b[256 + (i >> 3)] |= 1 << (i & 7); }
+    animOut.pix[t] = b.toString('base64');
+  }
+  animOut.dyn = [...dyn].sort((a, b) => a - b);
+}
+
+writeFileSync(join(out, `${game}.json`), JSON.stringify({game, pal: PAL, avg, terrain, tileFlag, tileFlag2, baseTile, look, books, schedule, talk, fmt: [...fmt], anim: animOut}));
+console.log(`${game}: animated tiles ${animOut.tiles.length}, changing tiles ${animOut.dyn.length}, pixel sets ${Object.keys(animOut.pix).length}`);
 console.log(`${game}: tiles 2048, objects ${objblk.length} + ${o} bytes, objlist ${objlist.length}, schedules ${schedule.filter(s => s.length).length}, talk ${Object.keys(talk).length}, books ${books.length} -> ${out}`);

@@ -1,6 +1,6 @@
 // Ultima III: Sosaria, Ambrosia, the 12 townes and castles and the 7 dungeons, from the game files
 // (extracted to data/u3 by tools/extract-u3.mjs). Mechanics: u3-decompiled/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs} from '../../lib/draw.js';
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, centredGlyphs, tileLayer, scrollRows} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u3/', import.meta.url);
 
@@ -44,20 +44,42 @@ const load = () => loading ||= (async () => {
   d.charset = charset; d.glyph = centredGlyphs(charset);
   for (const m of Object.values(d.maps)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
   for (const m of Object.values(d.dungeons)) m.bytes = Uint8Array.from(m.cells.match(/../g), b => parseInt(b, 16));
-  d.tiles = tiles; d.png = {};
+  d.tiles = tiles;
   return d;
 })();
 
-function mapImage(d, key, cells) {
-  if (d.png[key]) return d.png[key];
-  const c = canvas(64 * 16, 64 * 16), ctx = c.getContext('2d');
-  for (let i = 0; i < 4096; i++) blit(ctx, d.tiles, 16, cells[i] >> 2, i & 63, i >> 6);
-  return d.png[key] = c.toDataURL();
-}
-function peopleImage(d, people) {
-  const c = canvas(64 * 16, 64 * 16), ctx = c.getContext('2d');
-  for (const q of people) blit(ctx, d.tiles, 16, q.tile >> 2, q.x, q.y);
-  return c.toDataURL();
+// ---------- animation (c/lib/lib.c) ----------
+// KeyReady calls Animate on every keyboard poll outside the dungeons, and Animate redraws the 11 x 11 view. Its
+// counters are global, so every square of a kind moves together:
+//   AnimScroll: water and force fields scroll down one pixel row every 3 polls, lava and moon gates every 2
+//     (ScrollTile: the bottom row comes back at the top);
+//   AnimFlags: rows 1 and 2 of the castle swap every 4 polls, rows 3 and 4 of the towne every 3, rows 2 and 3 of
+//     the frigate every 2;
+//   SwapFrames: every 10 polls the pictures of shapes 16-30 (merchant to balron) and 12 (whirlpool) are swapped
+//     with their second frames, 64-78 and 79.
+// A poll redraws 121 tiles, about 12,000 instructions: some 40 ms under GOG's DOSBox (cycles=300), an estimate.
+const POLL_MS = 40;
+const SCROLL = {0x00: 3, 0x20: 3, 0x21: 2, 0x22: 2}, FLAGS = {0x07: [4, 1, 2], 0x06: [3, 3, 4], 0x0B: [2, 2, 3]};
+const second = n => n === 0x0C ? 0x4F : n >= 0x10 && n <= 0x1E ? n + 0x30 : -1;
+const animated = [...Object.keys(SCROLL), ...Object.keys(FLAGS)].map(Number).concat(0x0C, ...Array.from({length: 15}, (_, i) => 0x10 + i));
+const frame = (n, tick) => !tick ? 0 : SCROLL[n] ? Math.floor(tick / SCROLL[n]) % 16 : FLAGS[n] ? Math.floor(tick / FLAGS[n][0]) % 2
+  : second(n) >= 0 ? Math.floor(tick / 10) % 2 : 0;
+function animatedMap(d, floor, people) {
+  const picture = (n, key, ctx) => {
+    if (SCROLL[n]) return scrollRows(ctx, 16, key);
+    if (FLAGS[n]) {
+      const [, a, b] = FLAGS[n], img = ctx.getImageData(0, 0, 16, 16), px = img.data, ra = px.slice(a * 64, a * 64 + 64);
+      px.copyWithin(a * 64, b * 64, b * 64 + 64); px.set(ra, b * 64);
+      return ctx.putImageData(img, 0, 0);
+    }
+    const t = second(n);
+    ctx.drawImage(d.tiles, (t % 16) * 16, Math.floor(t / 16) * 16, 16, 16, 0, 0, 16, 16);
+  };
+  return {
+    native: 16, animate: {ms: POLL_MS},
+    draw: tileLayer({w: 64, h: 64, sheet: d.tiles, at: (x, y) => floor[y * 64 + x] >> 2, frame, picture, animated,
+      sprites: people.map(q => ({x: q.x, y: q.y, tile: q.tile >> 2})), spriteLayer: 'people'}),
+  };
 }
 // The map with the people taken off (they are written into it, MonUnder holds the cell underneath).
 function floorOf(m) {
@@ -123,9 +145,7 @@ function renderWorld(d, key) {
   if (sosaria) layers.push({id: 'gates', name: 'Moon gates', swatch: swatch(ring(0, 0, C.gate, '', .14))});
   if (m.people.length) layers.push({id: 'people', name: 'Creatures'});
   layers.push({id: 'marks', name: 'Whirlpool', swatch: swatch(ring(0, 0, C.talk, '.18 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false});
-  const images = [{src: mapImage(d, key, floor)}];
-  if (m.people.length) images.push({src: peopleImage(d, m.people), layer: 'people'});
-  return {title: sosaria ? 'Sosaria' : 'Ambrosia', subtitle: 'Ultima III', width: 64, height: 64, images, svg, cell, features, info, layers};
+  return {title: sosaria ? 'Sosaria' : 'Ambrosia', subtitle: 'Ultima III', width: 64, height: 64, ...animatedMap(d, floor, m.people), svg, cell, features, info, layers};
 }
 
 // ---------- townes and castles ----------
@@ -184,7 +204,7 @@ function renderTown(d, key) {
     <p class="muted">Nothing in a towne is saved: chests, people, unlocked doors and an angry guard all reset on the next visit.</p>`;
   return {
     title: t[1], subtitle: castle ? 'Castle' : 'Towne', width: 64, height: 64,
-    images: [{src: mapImage(d, key, floor)}, {src: peopleImage(d, m.people), layer: 'people'}], svg, cell, features, info,
+    ...animatedMap(d, floor, m.people), svg, cell, features, info,
     layers: [{id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, C.talk))},
       {id: 'shops', name: 'Merchants', swatch: swatch(ring(0, 0, C.shop))}, {id: 'locked', name: 'Locked doors', swatch: swatch(ring(0, 0, C.lock))},
       {id: 'start', name: 'Where you enter', swatch: swatch(ring(0, 0, C.start, '.18 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],

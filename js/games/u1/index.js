@@ -1,6 +1,7 @@
 // Ultima I: the world, the towns and castles (from the game files, extracted to data/u1 by
 // tools/extract-u1.mjs) and every dungeon level (computed from the character's seed).
 import {level, levelMonsters, CELL} from './u1gen.js';
+import {tileLayer, scrollRows} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u1/', import.meta.url);
 const W = 168, H = 156, TW = 38, TH = 18;
@@ -82,7 +83,7 @@ function load() {
     const terrain = new Uint8Array(W * H);
     for (let i = 0; i < W * H; i++) { let v = parseInt(json.world[i], 16); if (v > 4) { v++; if (v === 8) v++; } terrain[i] = v; }
     const towns = json.towns.map(h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16)));
-    return {...json, terrain, towns, tilesImg: tiles, townImg: town, worldPng: null};
+    return {...json, terrain, towns, tilesImg: tiles, townImg: town};
   })();
 }
 
@@ -96,12 +97,25 @@ const short = name => name.replace(/^The Castle (of )?/, '').replace(/^The /, ''
 
 // ---------- the world ----------
 
+// ---------- animation (OUT.EXE: src/out/OUTC.C, src/origin/OOAF57.ASM drawview, OOA554.ASM animwat) ----------
+// On the overworld the main loop calls drawview(cnt) after every keyboard poll that finds no key (cnt counts the
+// polls since the last command). drawview first scrolls the water down one pixel row (animwat: the bottom row comes
+// back at the top), then repaints: castles show their second picture (5) while cnt % 6 is 3-5, towns their second
+// picture (8) unless cnt % 4 is 0. A poll waits about 3 timer ticks (keyup, waittick(3)) plus the repaint: some
+// 150 ms. Towns and castles inside, and the dungeons, do not move.
+const POLL_MS = 150;
+const worldFrame = (n, tick) => !tick ? 0 : n === 0 ? tick % 16 : n === 4 ? Math.floor(tick / 3) % 2 : n === 7 ? (tick % 4 ? 1 : 0) : 0;
+function worldPicture(d) {
+  return (n, key, ctx) => {
+    if (n === 0) return scrollRows(ctx, 16, key);
+    const t = n + 1;   // castle 4 -> 5, town 7 -> 8
+    ctx.drawImage(d.tilesImg, (t % 16) * 16, Math.floor(t / 16) * 16, 16, 16, 0, 0, 16, 16);
+  };
+}
+
 function renderWorld(d) {
-  if (!d.worldPng) {
-    const c = canvas(W * 16, H * 16), ctx = c.getContext('2d');
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) blit(ctx, d.tilesImg, 16, d.terrain[y * W + x], x, y);
-    d.worldPng = c.toDataURL();
-  }
+  d.worldDraw ||= tileLayer({w: W, h: H, sheet: d.tilesImg, at: (x, y) => d.terrain[y * W + x], animated: [0, 4, 7],
+    frame: worldFrame, picture: worldPicture(d)});
   const byXY = {};
   for (const pl of d.places) byXY[`${pl.x},${pl.y}`] = pl;
   let names = '';
@@ -139,7 +153,7 @@ function renderWorld(d) {
     shifts you 77 squares north or south, into the other half: “GO EAST TO GO EAST!”. Crossing into another land on
     foot clears the monsters of the land you left.</p>`;
   return {
-    title: 'Sosaria', subtitle: 'Ultima I', width: W, height: H, images: [{src: d.worldPng}], svg, features, cell, info,
+    title: 'Sosaria', subtitle: 'Ultima I', width: W, height: H, native: 16, draw: d.worldDraw, animate: {ms: POLL_MS}, svg, features, cell, info,
     layers: [
       {id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       {id: 'lands', name: 'Lands', swatch: swatch(label(.5, .8, 'L', .9, '#ffe9a8'))},

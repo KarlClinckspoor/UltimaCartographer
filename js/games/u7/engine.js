@@ -1,8 +1,9 @@
 // The Ultima VII engine's world (The Black Gate, Serpent Isle): 3072 x 3072 tiles drawn in the browser as you pan, from
 // the game's own chunk map and objects (data/<id>, by tools/extract-u7.mjs). Objects at or above the
 // height cutoff are left out, so roofs and upper floors can be lifted off to see inside.
-// Drawing: Exult's rules (gamewin.cc Get_shape_location: an object's hot spot is at
-// ((x + 1) * 8 - 1 - 4 * lift, (y + 1) * 8 - 1 - 4 * lift)).
+// Drawing: the original renderer's rules, from the decomp (../Ultima7_Decomp): an object's hot spot is at
+// ((x + 1) * 8 - 1 - 4 * lift, (y + 1) * 8 - 1 - 4 * lift) (main/bltshape.c), and objects are painted in the order
+// common/sortitem.c works out.
 import {esc, svgDoc, g, gridSwatch, p, image} from '../../lib/draw.js';
 
 const N = 3072, CH = 192;   // tiles and chunks a side
@@ -39,7 +40,8 @@ const load = () => loading ||= (async () => {
   for (let i = 0; i < n; i++) if ((d.obj.sf[i] & 0x3FF) === KEY) addKey(d.obj.q[i], {x: d.obj.x[i], y: d.obj.y[i], where: 'lies'});
   for (const [i, items] of Object.entries(contents)) walk(items, {x: d.obj.x[+i], y: d.obj.y[+i], where: 'in', box: d.obj.sf[+i]});
   for (const p of meta.npcs) if (p.inv) walk(p.inv, {x: p.x, y: p.y, where: 'carried', who: p});
-  // how many locked chests and sealed boxes each lock number has
+  // how many locked chests each lock number has
+  d.ord = orderer(d.tfa); d.lists = new Map();
   d.locks = new Map();
   for (let i = 0; i < n; i++) if (LOCKED.has(d.obj.sf[i] & 0x3FF)) d.locks.set(d.obj.q[i], (d.locks.get(d.obj.q[i]) || 0) + 1);
   return d;
@@ -51,17 +53,37 @@ const groundAt = (d, x, y) => 0x7FFF & d.chunks[d.map[((y >> 8) * 12 + (x >> 8))
 const FR = (d, sf) => { const o = d.at[(sf & 0x3FF) * 64 + ((sf >> 10) & 63)], v = d.fr; return o < 0 ? null : {page: v.getUint8(o), ax: v.getUint16(o + 2, true), ay: v.getUint16(o + 4, true), w: v.getUint16(o + 6, true), h: v.getUint16(o + 8, true), xl: v.getInt16(o + 10, true), ya: v.getInt16(o + 12, true), c1: v.getUint8(o + 14), c2: v.getUint8(o + 15)}; };
 const avg = f => [f.c1 & 0xF0, (f.c1 & 15) << 4, f.c2 & 0xF0, (f.c2 & 15) * 17];
 const isFlat = sf => (sf & 0x3FF) < 0x96;
-// An item's name as the game builds it (Exult objs/objnames.cc): a name is four parts split by slashes, the singular
-// the first part, a space, the second and the third ("/key//s" is "key"), the plural the count, the second and the
-// fourth ("3 keys"); some shapes name each frame instead (TEXT.FLX's misc names). A leading "a"/"an" is dropped.
+// An item's name as the game builds it (decomp main/look.c ProduceItemDisplayName): a name is four parts split by
+// slashes, article/base/singular/plural: one is the article, a space, the base and the singular ("/key//s" is "key"),
+// more the count, the base and the plural ("3 keys"); a name without slashes is all base ("3 gold"). Some shapes name
+// each frame instead (TEXT.FLX's misc names). The article ("a", "an") is dropped here, for titles.
 function name(d, sf, q = 0) {
   let s = d.frameNames?.[(sf & 0x3FF) * 64 + ((sf >> 10) & 31)] || d.names[sf & 0x3FF] || '';
   if (s.includes('/')) {
     const [a, b = '', c = '', e = ''] = s.split('/');
     s = q > 1 ? `${q} ${b}${e}` : `${a ? a + ' ' : ''}${b}${c}`;
-  }
+  } else if (s && q > 1) s = `${q} ${s}`;
   s = s.replace(/^(a|an) /i, '').trim();
   return s ? s.replace(/^\w/, ch => ch.toUpperCase()) : 'Unnamed object';
+}
+// A chunk's list as the game builds it when the chunk comes into view (decomp main/vitem.c LoadChunkItems): its
+// movable objects as the region file lists them, then each terrain cell that is a shape of its own (150 and up; all of
+// them are of class 0, the only ones the game makes objects of), then its fixed objects, each put in place by PlaceItem.
+// Returns a dummy head whose next is the first object.
+function chunkList(d, ci) {
+  let head = d.lists.get(ci);
+  if (head) return head;
+  head = {next: null};
+  const cx = ci % CH, cy = ci / CH | 0, ids = d.byChunk[ci], node = i => ({x: d.obj.x[i], y: d.obj.y[i], z: d.obj.z[i], sf: d.obj.sf[i], t: i, next: null});
+  let tail = head;
+  for (const i of ids) if (!(d.obj.fl[i] & 1)) tail = tail.next = node(i);
+  for (let k = 0; k < 256; k++) {
+    const x = cx * 16 + (k & 15), y = cy * 16 + (k >> 4), sf = groundAt(d, x, y);
+    if (!isFlat(sf)) d.ord.place(head, {x, y, z: 0, sf, t: -1, next: null});
+  }
+  for (const i of ids) if (d.obj.fl[i] & 1) d.ord.place(head, node(i));
+  d.lists.set(ci, head);
+  return head;
 }
 // schedule activities (Exult schedule.h)
 const ACT = ['fighting', 'pacing east-west', 'pacing north-south', 'talking', 'dancing', 'eating', 'farming', 'keeping shop', 'mining', 'hunting', 'standing', 'loitering', 'wandering',
@@ -76,92 +98,221 @@ function slotAt(sched, hour) {
   for (const e of sched) { const a = (per - e[0] + 8) % 8; if (a < ago) { ago = a; best = e; } }
   return best;
 }
-const KEY = 641, LOCKED = new Set([522, 798]), DOORS = new Set([270, 376, 432, 433]);   // locked chest, sealed box; the four doors (Exult shape_info, keyring.uc)
+// Keys (decomp usecode Key.use, SI &KEY.use): a key opens a locked chest (522) or one of the four doors with the same
+// quality as its own. A door's state is its frame mod 4: 0 shut, 1 open, 2 locked, 3 magically locked (no key opens it).
+// Black Gate's sealed box (798) needs no key: using it opens it (SealedBox.use); in Serpent Isle 798 is a baby dragon.
+const KEY = 641, LOCKED = new Set([522]), DOORS = new Set([270, 376, 432, 433]), SEALED = 798;
 // a shape's footprint in tiles (TFA.DAT), x and y swapped for a reflected frame
 const size = (d, sf) => { const t = d.tfa[(sf & 0x3FF) * 3 + 2], a = 1 + (t & 7), b = 1 + ((t >> 3) & 7); return sf & (32 << 10) ? [b, a] : [a, b]; };
-// An object's box in tiles and its picture on the map (in shape pixels, 8 a tile), as Exult's Ordering_info has them
-// (objs/ordinfo.h): x from xleft to xright, y from yfar to ynear, height from zbot to ztop; a flat object (no height)
-// counts as one below its lift. The picture's hot spot is ((x + 1) * 8 - 1 - 4 * lift, (y + 1) * 8 - 1 - 4 * lift).
+// An object's picture on the map, in shape pixels (8 a tile): the hot spot is ((x + 1) * 8 - 1 - 4 * lift, likewise y).
 function box(d, o) {
   const f = FR(d, o.sf); if (!f) return null;
-  const [xs, ys] = size(d, o.sf), zs = d.tfa[(o.sf & 0x3FF) * 3] >> 5;
   const hx = (o.x + 1) * 8 - 1 - 4 * o.z, hy = (o.y + 1) * 8 - 1 - 4 * o.z;
-  return Object.assign(o, {f, zs, xl: o.x - xs + 1, xr: o.x, yf: o.y - ys + 1, yn: o.y, zb: zs ? o.z : o.z - 1, zt: o.z + zs - 1,
-    left: hx - f.xl, top: hy - f.ya});
+  o.f = f; o.left = hx - f.xl; o.top = hy - f.ya;
+  return o;
 }
-// along one axis: cmp -1 if the first range is before the second, 1 if after, 0 if equal; over if they overlap (Compare_ranges)
-function ranges(a1, b1, a2, b2) {
-  if (b1 < a2) return [-1, false];
-  if (b2 < a1) return [1, false];
-  return [a1 < a2 ? -1 : a1 > a2 ? 1 : b1 < b2 ? 1 : b1 > b2 ? -1 : 0, true];
-}
-// which of two overlapping pictures is drawn first: -1 the first, 1 the second, 0 either (Exult Game_object::compare,
-// objs/objs.cc). The game's own rule: whatever is nearer (south, east) or higher goes over.
-function compare(a, b) {
-  const [xc, xo] = ranges(a.xl, a.xr, b.xl, b.xr), [yc, yo] = ranges(a.yf, a.yn, b.yf, b.yn), [zc, zo] = ranges(a.zb, a.zt, b.zb, b.zt);
-  if (!xc && !yc && !zc) return a.f.w < b.f.w && a.f.h < b.f.h ? -1 : a.f.w > b.f.w && a.f.h > b.f.h ? 1 : 0;
-  if (xo && yo && zo) {
-    if (!a.zs) return !b.zs ? 0 : -1;
-    if (!b.zs) return 1;
-    if (a.z === b.z && a.zs - b.zs > 1) return 1;
-    if (a.z === b.z && b.zs - a.zs > 1) return -1;   // the same rule the other way round (Exult only asks one way)
-  }
-  if (xc >= 0 && yc >= 0 && zc >= 0) return 1;
-  if (xc <= 0 && yc <= 0 && zc <= 0) return -1;
-  if (yo) {
-    if (xo) return zc;
-    if (zo) return xc;
-    if (!zc) return xc;
-    if (xc === zc) return xc;
+// ---------- the game's drawing order (decomp: BG U7/common/sortitem.c; Serpent Isle's is the same) ----------
+// Each chunk keeps its objects in a list, nearest first. An object's extent is three bit masks: the cells it covers
+// across and down, counted back from a chunk's far corner (bit k: k cells west or north of it), and the heights it
+// covers (bit 15 - z for the ground up). PlaceItem puts a new object before the first one in its chunk's list that
+// lies behind it, then moves up a later one that lies in front of it. RenderOrder::build merges the chunks in view,
+// from the bottom right, holding back an object that reaches into the chunk to its left or above until that chunk
+// has been listed up to it. The painter draws the result last to first, so the flat objects (height 0), listed
+// after everything else, go down first.
+const SPAN = [0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff], HMASK = [0x8000, 0x4000, 0x6000, 0x7000, 0x7800, 0x7c00, 0x7e00, 0x7f00];
+const WAITING = 0, READY = 1, ACTIVE = 2, HELD = 3, HELD_BOTH = 4, DONE = 5;   // a chunk's sorting state
+function orderer(tfa) {
+  const t2 = sf => tfa[(sf & 0x3FF) * 3 + 2];
+  const fpx = sf => (sf & 0x8000 ? t2(sf) >> 3 : t2(sf)) & 7, fpy = sf => (sf & 0x8000 ? t2(sf) : t2(sf) >> 3) & 7;   // GetFootprintX/Y
+  const height = o => tfa[(o.sf & 0x3FF) * 3] >> 5;
+  const shl = (m, n) => n < 32 ? (m << n) | 0 : 0;   // a 32-bit long, as in the game
+  // SetItemExtent: o's masks counted from (bx, by); only the low byte of a coordinate counts, as in the game
+  const ext = (o, bx, by) => ({bx, by, x: shl(SPAN[fpx(o.sf)], (bx - o.x) & 255), y: shl(SPAN[fpy(o.sf)], (by - o.y) & 255), z: HMASK[height(o)] >> o.z});
+  const corner = o => ext(o, (o.x & ~15) + 15, (o.y & ~15) + 15);
+  // CompareItemExtent: 1 if o lies behind the box, 2 if in front of it, 0 if neither
+  function cmp(b, o) {
+    const a = ext(o, b.bx, b.by);
+    if (b.x <= a.x && b.y <= a.y && b.z <= a.z) return 1;
+    if (b.x >= a.x && b.y >= a.y && b.z >= a.z) return 2;
+    const zLE = b.z <= a.z || (b.z & a.z), zGE = b.z >= a.z || (b.z & a.z);
+    if (a.x & b.x) {
+      if (a.y & b.y) { if (b.z < a.z) return 1; if (b.z > a.z) return 2; }
+      else { if (b.y < a.y && zLE) return 1; if (b.y > a.y && zGE) return 2; }
+    } else if (a.y & b.y) { if (b.x < a.x && zLE) return 1; if (b.x > a.x && zGE) return 2; }
+    else if (b.x < a.x) { if (b.y < a.y && zLE) return 1; }
+    else if (b.y > a.y && zGE) return 2;
     return 0;
   }
-  if (xo) return zo || !zc ? yc : yc === zc ? yc : 0;
-  if (xc === -1) { if (yc === -1) return zo || zc <= 0 ? -1 : 0; }
-  else if (yc === 1) { if (zo || zc >= 0) return 1; if (a.zt / 5 < b.zb / 5) return -1; }
-  return 0;
-}
-// the order to paint a set of boxed objects: each after everything it must cover, found by comparing only pictures
-// that overlap (bucketed by 64-pixel squares); ties keep the given order
-function paintOrder(list) {
-  const B = 64, buckets = new Map();
-  list.forEach((o, i) => {
-    o.i = i; o.deps = null;
-    for (let by = Math.floor(o.top / B); by <= Math.floor((o.top + o.f.h - 1) / B); by++) for (let bx = Math.floor(o.left / B); bx <= Math.floor((o.left + o.f.w - 1) / B); bx++) {
-      const k = by * 100000 + bx; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(o);
-    }
-  });
-  for (const [k, os] of buckets) {
-    const by = Math.floor(k / 100000), bx = k - by * 100000;
-    for (let i = 0; i < os.length; i++) for (let j = i + 1; j < os.length; j++) {
-      const a = os[i], b = os[j], l = Math.max(a.left, b.left), t = Math.max(a.top, b.top);
-      if (l >= Math.min(a.left + a.f.w, b.left + b.f.w) || t >= Math.min(a.top + a.f.h, b.top + b.f.h)) continue;   // no overlap
-      if (Math.floor(l / B) !== bx || Math.floor(t / B) !== by) continue;   // compared in another bucket
-      // Exult asks only one way round (each new object against those already placed), and its answers are not
-      // always mirror images: ask both ways, and leave a pair with conflicting answers to the default order
-      const ab = compare(a, b), ba = compare(b, a), c = ab && ba && ab === ba ? 0 : ab || -ba;
-      if (c < 0) (b.deps ||= []).push(a); else if (c > 0) (a.deps ||= []).push(b);
+  // PlaceItem: o into the list after head (a dummy whose next is the first object)
+  function place(head, o) {
+    const first = corner(o);
+    let prev = head, cur = head.next;
+    while (cur && cmp(first, cur) !== 1) { prev = cur; cur = cur.next; }
+    o.next = cur; prev.next = o;
+    if (!cur) return;
+    let before = prev, found = null, second = null, guard = 100000;
+    prev = cur; cur = cur.next;
+    while (cur && --guard) {
+      if (found) {
+        if (cur === found) { prev.next = cur.next; cur.next = o; before.next = cur; before = cur; cur = prev; found = null; }
+        else if (cmp(second, cur) === 2) { found = cur; second = corner(cur); prev = o; cur = o.next; }
+      } else if (cmp(first, cur) === 2) { found = cur; second = corner(cur); prev = o; cur = o.next; }
+      prev = cur; cur = cur.next;
     }
   }
-  // Kahn's topological sort, always painting the ready object that comes first in the given order; a cycle (the data has
-  // them: a body lying half inside a wall, beside a table) is broken by painting the first remaining object, so it costs
-  // one small overlap instead of reordering whole walls
-  const n = list.length, need = new Int32Array(n), after = Array.from({length: n}, () => []);
-  for (const o of list) if (o.deps) for (const q of o.deps) { need[o.i]++; after[q.i].push(o.i); }
-  const heap = [], push = v => { heap.push(v); let k = heap.length - 1; while (k) { const p = (k - 1) >> 1; if (heap[p] <= v) break; heap[k] = heap[p]; k = p; } heap[k] = v; };
-  const pop = () => { const top = heap[0], v = heap.pop(); if (heap.length) { let k = 0; for (;;) { let c = 2 * k + 1; if (c >= heap.length) break; if (c + 1 < heap.length && heap[c + 1] < heap[c]) c++; if (heap[c] >= v) break; heap[k] = heap[c]; k = c; } heap[k] = v; } return top; };
-  const done = new Uint8Array(n), out = [];
-  for (let i = 0; i < n; i++) if (!need[i]) push(i);
-  let scan = 0;
-  while (out.length < n) {
-    let i;
-    if (heap.length) i = pop();
-    else { while (done[scan]) scan++; i = scan; }   // a cycle: force the first one left
-    if (done[i]) continue;
-    done[i] = 1; out.push(list[i]);
-    for (const j of after[i]) if (!done[j] && --need[j] === 0) push(j);
+  const crossX = o => (((o.x & 255) - fpx(o.sf)) & 0xfff0) !== ((o.x & 255) & 0xfff0);   // ShapeCrossesChunkX
+  const crossY = o => (((o.y & 255) - fpy(o.sf)) & 0xfff0) !== ((o.y & 255) & 0xfff0);
+  // IsItemHiddenBehind: whether b lies behind a, measured from the far corner of the farther of their chunks
+  const hidden = (a, b) => cmp(ext(a, Math.max(a.x & ~15, b.x & ~15) + 15, Math.max(a.y & ~15, b.y & ~15) + 15), b) === 1;
+  // RenderOrder::build over a grid of chunk lists (heads[row][col]: each chunk's first object); keep(o) is addItem's
+  // test (in the box, within the heights). Returns the objects nearest first.
+  function build(heads, keep) {
+    const R = heads.length, C = heads[0].length, LR = R - 1, LC = C - 1, out = [];
+    const grid = v => heads.map(r => r.map(() => v));
+    const NX = heads.map(r => r.slice()), ST = grid(WAITING), H1 = grid(null), H2 = grid(null);
+    const add = o => { if (o && keep(o)) out.push(o); };
+    const push = (r, c, o) => { if (!H1[r][c]) H1[r][c] = o; else if (!H2[r][c]) H2[r][c] = o; };
+    function release(col, row, r) {   // ReleaseHeldItem
+      if (!r) return false;
+      if (row < LR && r === NX[row + 1][col]) {
+        if (ST[row + 1][col] !== HELD) return false;
+        NX[row + 1][col] = r.next; ST[row + 1][col] = READY; return true;
+      }
+      if (col < LC && r === NX[row][col + 1]) {
+        if (ST[row][col + 1] !== HELD) return false;
+        NX[row][col + 1] = r.next; ST[row][col + 1] = READY; return true;
+      }
+      if (row < LR && col < LC && r === NX[row + 1][col + 1] && ST[row + 1][col + 1] === HELD_BOTH) {
+        NX[row + 1][col + 1] = r.next; ST[row + 1][col + 1] = READY;
+        for (const [y, x] of [[row + 1, col], [row, col + 1]]) {
+          if (r === H1[y][x]) { H1[y][x] = H2[y][x]; H2[y][x] = null; }
+          if (r === H2[y][x]) H2[y][x] = null;
+        }
+        return true;
+      }
+      return false;
+    }
+    const settle = (row, col) => { if (!H1[row][col] && H2[row][col]) { H1[row][col] = H2[row][col]; H2[row][col] = null; } };
+    ST[LR][LC] = READY;
+    let cur = null, col = LC, row = LR, mode = 0, fb = null, sb = null, guard = 2000000;
+    while (--guard) {
+      if (!cur) {
+        if (mode) {   // the chunk's held objects, before its own
+          if (mode === 2) {
+            cur = H1[row][col]; let other = H2[row][col];
+            if (hidden(other, cur)) { cur = other; other = H1[row][col]; }
+            H1[row][col] = H2[row][col] = null;
+            if (release(col, row, cur)) add(cur);
+            if (release(col, row, other)) add(other);
+          } else {
+            cur = H1[row][col]; H1[row][col] = null;
+            if (release(col, row, cur)) add(cur);
+          }
+          mode = 0; settle(row, col); cur = null;
+          continue;
+        }
+        // the next chunk ready, from the bottom right; when none is, the first one still holding an object gives it up
+        let done = false;
+        col = LC; row = LR;
+        while (ST[row][col] !== READY) if (--col < 0) { col = LC; if (--row < 0) { done = true; break; } }
+        if (done) {
+          done = false; col = LC; row = LR;
+          while (ST[row][col] === DONE) if (--col < 0) { col = LC; if (--row < 0) { done = true; break; } }
+          if (!done && (ST[row][col] === HELD || ST[row][col] === HELD_BOTH)) {
+            ST[row][col] = READY;
+            cur = NX[row][col]; add(cur);
+            NX[row][col] = cur = cur ? cur.next : null;
+            if (col > 0) H1[row][col - 1] = H2[row][col - 1] = null;
+            if (row > 0) H1[row - 1][col] = H2[row - 1][col] = null;
+          }
+        }
+        if (done) break;
+        cur = H1[row][col];
+        if (cur) {
+          mode = 1; fb = corner(cur);
+          cur = H2[row][col];
+          if (cur) { mode = 2; sb = corner(cur); }
+        } else mode = 0;
+        cur = NX[row][col];
+        ST[row][col] = ACTIVE;
+        if (row > 0 && (col === LC || ST[row - 1][col + 1] > READY) && ST[row - 1][col] < HELD) ST[row - 1][col] = READY;
+        if (col > 0 && (row === LR || ST[row + 1][col - 1] > READY) && ST[row][col - 1] < HELD) ST[row][col - 1] = READY;
+      }
+      if (!cur) { ST[row][col] = DONE; continue; }
+      if (height(cur) === 0) {   // flat: listed at the end
+        NX[row][col] = cur = cur.next;
+        if (!cur) ST[row][col] = DONE;
+        continue;
+      }
+      let flag = false, h1 = 0, h2 = 0;
+      if (mode) h1 = cmp(fb, cur);
+      if (mode === 2) h2 = cmp(sb, cur);
+      if (h1 === 1 || h2 === 1) { NX[row][col] = cur; ST[row][col] = READY; flag = true; }
+      else if (h1 !== 2 && h2 !== 2) {
+        if (col > 0 && crossX(cur)) {
+          if (mode) { h1 = 1; if (mode === 2) h2 = 1; flag = true; }
+          NX[row][col] = cur;
+          push(row, col - 1, cur);
+          if (row > 0 && crossY(cur)) { ST[row][col] = HELD_BOTH; push(row - 1, col, cur); push(row - 1, col - 1, cur); }
+          else { ST[row][col] = HELD; if (row > 0 && ST[row - 1][col] === READY) ST[row - 1][col] = WAITING; }
+        } else if (row > 0 && crossY(cur)) {
+          if (mode) { h1 = 1; if (mode === 2) h2 = 1; flag = true; }
+          NX[row][col] = cur; ST[row][col] = HELD;
+          if (col > 0 && ST[row][col - 1] === READY) ST[row][col - 1] = WAITING;
+          push(row - 1, col, cur);
+        }
+        if (!flag && (ST[row][col] === HELD || ST[row][col] === HELD_BOTH)) { cur = null; mode = 0; continue; }
+      }
+      if (flag) {
+        if (h1 === 1) {
+          if (h2 === 1 && hidden(H2[row][col], H1[row][col])) { const t = H1[row][col]; H1[row][col] = H2[row][col]; H2[row][col] = t; }
+          cur = H1[row][col]; H1[row][col] = null;
+          if (release(col, row, cur)) add(cur);
+        }
+        if (h2 === 1) { cur = H2[row][col]; H2[row][col] = null; if (release(col, row, cur)) add(cur); }
+        settle(row, col);
+        mode = 0; cur = null;
+      } else {
+        add(cur);
+        cur = cur.next;
+        if (!cur) { NX[row][col] = null; ST[row][col] = DONE; }
+      }
+    }
+    if (!guard) {   // a walk that does not end (not seen): whatever it missed goes on top rather than nowhere
+      console.warn('U7 draw order: the walk did not end');
+      const seen = new Set(out);
+      for (const r of heads) for (const h of r) for (let o = h; o; o = o.next) if (height(o) && !seen.has(o)) add(o);
+    }
+    // the flat objects, chunk by chunk from the top left
+    for (const r of heads) for (const h of r) for (let o = h; o; o = o.next) if (!height(o)) add(o);
+    return out;
   }
-  return out;
+  return {place, build};
 }
+// Animation, as the original renderer does it (decomp: BG U7/common/mapview.c RendererState::frame and
+// WorldView::paintItem; SI si/common/mapview.c adds kind 15). Each repaint the clock ticks once; an animated shape's
+// kind says how its frame moves. The game keeps a moving frame per item; here it is worked out from the tick (and,
+// where the game rolls dice, from a hash of the item and the tick), so neighbouring tiles agree.
+const hash = (i, t) => { let h = (i * 2654435761 ^ t * 40503) >>> 0; h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; return (h ^ h >>> 13) % 100; };
+function animFrame(kind, n, f, t, id, hour) {
+  switch (kind) {
+    case 0: return (f + t) % n;                                   // RendererState::frame: the tick added
+    case 1: return (f + t) % n;                                   // one a repaint
+    case 2: case 12: return (f + (t >> 2)) % n;                   // a quarter of the repaints (2: by chance, 12: every 4th)
+    case 3: case 4: { const p = 2 * (n - 1) || 1, k = ((kind === 4 ? t >> 2 : t) + f) % p; return k < n ? k : p - k; }   // to and fro
+    case 5: { if (f) return (f + t) % n; const P = n + 20, k = (t + hash(id, 0)) % P; return k < n ? k : 0; }   // now and then a run through
+    case 6: return hash(id, t) % n;                               // any frame
+    case 7: return f ^ (hash(id, t / 10 | 0) & 1);                // the other of a pair, a 5% chance a repaint: about every 20
+    case 9: case 10: { const L = kind === 9 ? 8 : 6, g = f + t; return n < L || g < n ? Math.min(g, n - 1) : n - L + (g - (n - L)) % L; }   // run, then loop the last 8 (6)
+    case 11: return f ? 1 + (f - 1 + t) % (n - 1) : 0;            // loop 1.. once started
+    case 13: return Math.min(f + t, n - 1);                       // run to the end and stay
+    case 14: return (f + (t >> 2)) % n;                           // a quarter of the clock added
+    case 8: return Math.min(hour, n - 1);                         // the hour (sundials)
+    case 15: { const g = f - f % 6, m = Math.min(6, n - g); return g + (f - g + t) % m; }   // SI: loops of 6 frames
+    default: return f;
+  }
+}
+
 // an item's picture, shrunk or grown to a line of text: a CSS sprite from the atlas page
 function icon(d, sf, px = 18) {
   const f = FR(d, sf); if (!f || !f.w) return '';
@@ -180,12 +331,51 @@ return {
     const cut = Math.max(1, Math.min(16, params.cut ?? 5));
     const shown = i => d.obj.z[i] < cut && !(d.obj.fl[i] & 2);
     const hour = Math.max(0, Math.min(23, params.hour ?? 12));
-    // a lone 'waiting' entry is a placeholder (the companions'), so they stay where the game starts them
-    const people = d.npcs.map(n => { const e = n.sched && !(n.sched.length === 1 && n.sched[0][1] === 15) && slotAt(n.sched, hour); return {...n, px: e ? e[2] : n.x, py: e ? e[3] : n.y, pz: e ? 0 : n.z, act: e ? e[1] : null}; });
+    // the game leaves alone an NPC whose own work is waiting (15), and the dead, the party and the paralysed (status
+    // 0x8000, 0x800, 0x1000): they stay where it starts them (decomp main/appts.c); the rest go where their schedule says
+    const stays = n => n.wt === 15 || (n.st & 0x9800);
+    const people = d.npcs.map(n => { const e = n.sched && !stays(n) && slotAt(n.sched, hour); return {...n, px: e ? e[2] : n.x, py: e ? e[3] : n.y, pz: e ? 0 : n.z, act: e ? e[1] : null}; });
     const peopleByChunk = new Map();
     for (const n of people) { const k = (n.py >> 4) * CH + (n.px >> 4); if (!peopleByChunk.has(k)) peopleByChunk.set(k, []); peopleByChunk.get(k).push(n); }
 
-    function draw(cv, x0, y0, span, off) {
+    // the chunk lists for this hour: a chunk with people in it gets its own copy, each person put in by PlaceItem
+    const lists = new Map();
+    const listOf = ci => {
+      let head = lists.get(ci);
+      if (head) return head;
+      head = chunkList(d, ci);
+      const ps = peopleByChunk.get(ci);
+      if (ps) {
+        const base = head; head = {next: null};
+        let tail = head;
+        for (let o = base.next; o; o = o.next) tail = tail.next = {...o, next: null};
+        for (const n of ps) d.ord.place(head, {x: n.px, y: n.py, z: n.pz, sf: n.sf, t: -2, n, next: null});
+      }
+      lists.set(ci, head);
+      return head;
+    };
+    // the objects standing on squares xa..xb - 1, ya..yb - 1 that keep() lets through, nearest first (the game's
+    // order; painted last to first)
+    const order = (xa, ya, xb, yb, keep) => {
+      const c0 = Math.max(0, xa >> 4), r0 = Math.max(0, ya >> 4), c1 = Math.min(CH - 1, (xb - 1) >> 4), r1 = Math.min(CH - 1, (yb - 1) >> 4), heads = [];
+      for (let r = r0; r <= r1; r++) { const row = []; for (let c = c0; c <= c1; c++) row.push(listOf(r * CH + c).next); heads.push(row); }
+      return d.ord.build(heads, o => o.x >= xa && o.x < xb && o.y >= ya && o.y < yb && keep(o));
+    };
+    const keeper = off => o => o.t >= 0 ? !off.has('objects') && shown(o.t) : o.t === -2 ? !off.has('people') && o.z < cut : true;
+
+    // per tile canvas, what was drawn for it: the flat ground and the ordered pictures, kept so an animation tick only
+    // swaps frames and draws again (no new paint order)
+    const drawn = new WeakMap();
+    const anim = d.anim || {};
+    const swap = (o, t) => {   // the picture of an animated object at tick t, its hot spot unchanged
+      const a = anim[o.sf & 0x3FF]; if (!a || !t) return o.f && o;
+      const f0 = (o.sf >> 10) & 31, fr = animFrame(a[0], a[1], f0 % a[1], t, o.t >= 0 ? o.t : o.y * N + o.x + 1e7, hour);
+      if (fr === f0) return o;
+      const f = FR(d, (o.sf & 0x83FF) | fr << 10); if (!f) return o;
+      const hx = o.left + o.f.xl, hy = o.top + o.f.ya;
+      return {f, left: hx - f.xl, top: hy - f.ya};
+    };
+    function draw(cv, x0, y0, span, off, tick = 0) {
       const ctx = cv.getContext('2d'), sc = 256 / span;   // canvas pixels a tile
       const xa = Math.max(0, Math.floor(x0)), ya = Math.max(0, Math.floor(y0)), xb = Math.min(N, Math.ceil(x0 + span)), yb = Math.min(N, Math.ceil(y0 + span));
       if (xa >= xb || ya >= yb) return;
@@ -212,30 +402,32 @@ return {
       }
       ctx.imageSmoothingEnabled = sc < 8;
       const k = sc / 8;   // canvas pixels a shape pixel
+      const key = `${x0},${y0},${span},${[...off].sort()}`, memo = drawn.get(cv);
+      if (tick && memo && memo.key === key) {
+        if (!memo.animated) return;   // nothing moves on this tile
+        ctx.clearRect(0, 0, 256, 256);
+        for (const [f, x, y] of memo.flats) { ctx.imageSmoothingEnabled = false; ctx.drawImage(d.atlas[f.page], f.ax, f.ay, f.w, f.h, (x - x0) * sc, (y - y0) * sc, f.w * k, f.h * k); }
+        ctx.imageSmoothingEnabled = sc < 8;
+        for (const o of memo.list) { const p = swap(o, tick); if (p) ctx.drawImage(d.atlas[p.f.page], p.f.ax, p.f.ay, p.f.w, p.f.h, (p.left / 8 - x0) * sc, (p.top / 8 - y0) * sc, p.f.w * k, p.f.h * k); }
+        return;
+      }
       const blit = (f, left, top) => ctx.drawImage(d.atlas[f.page], f.ax, f.ay, f.w, f.h, (left / 8 - x0) * sc, (top / 8 - y0) * sc, f.w * k, f.h * k);
-      // the ground's flat tiles, then everything with height (terrain shapes from the chunks and objects), lowest and farthest first
-      const tall = [];
-      for (let y = ya; y < yb + 8 && y < N; y++) for (let x = xa; x < xb + 8 && x < N; x++) {
+      // the ground's flat tiles (the game's paintTerrain), then the objects in the game's order: those standing up to 2
+      // chunks below and right of the tile, as a picture reaches at most 63 pixels above its hot spot and 60 more
+      // for height
+      const flats = [];
+      for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
         const sf = groundAt(d, x, y);
-        if (isFlat(sf)) { if (x < xb && y < yb) { const f = FR(d, sf); if (f) { ctx.imageSmoothingEnabled = false; blit(f, x * 8, y * 8); ctx.imageSmoothingEnabled = sc < 8; } } }
-        else tall.push({x, y, z: 0, sf, t: -1});
+        if (isFlat(sf)) { const f = FR(d, sf); if (f) { flats.push([f, x, y]); ctx.imageSmoothingEnabled = false; blit(f, x * 8, y * 8); ctx.imageSmoothingEnabled = sc < 8; } }
       }
-      if (objsOn) {
-        const m = 6;   // shapes reach up to ~6 chunks up and left of their tile
-        for (let cy = Math.max(0, (ya >> 4)); cy <= Math.min(CH - 1, ((yb - 1) >> 4) + m); cy++) for (let cx = Math.max(0, (xa >> 4)); cx <= Math.min(CH - 1, ((xb - 1) >> 4) + m); cx++)
-          for (const i of d.byChunk[cy * CH + cx]) if (shown(i)) tall.push({x: d.obj.x[i], y: d.obj.y[i], z: d.obj.z[i], sf: d.obj.sf[i], t: i});
-      }
-      if (!off.has('people')) for (let cy = Math.max(0, ya >> 4); cy <= Math.min(CH - 1, ((yb - 1) >> 4) + 2); cy++) for (let cx = Math.max(0, xa >> 4); cx <= Math.min(CH - 1, ((xb - 1) >> 4) + 2); cx++)
-        for (const n of peopleByChunk.get(cy * CH + cx) || []) if (n.pz < cut) tall.push({x: n.px, y: n.py, z: n.pz, sf: n.sf, t: -2});
-      // the pictures on this tile, painted in the game's order (paintOrder: Exult's comparison of the objects' boxes)
-      const vis = [];
-      for (const o of tall) {
+      const list = [];
+      for (const o of order(xa - 2, ya - 2, xb + 32, yb + 32, keeper(off)).reverse()) {
         if (!box(d, o)) continue;
         if (o.left / 8 > x0 + span || o.top / 8 > y0 + span || (o.left + o.f.w) / 8 < x0 || (o.top + o.f.h) / 8 < y0) continue;
-        vis.push(o);
+        list.push(o);
       }
-      vis.sort((a, b) => a.z - b.z || (a.x + a.y) - (b.x + b.y) || a.y - b.y);
-      for (const o of paintOrder(vis)) blit(o.f, o.left, o.top);
+      drawn.set(cv, {key, flats, list, animated: list.some(o => anim[o.sf & 0x3FF])});
+      for (const o of list) { const p = swap(o, tick); blit(p.f, p.left, p.top); }
     }
 
     // what is drawn at a point (in tiles): every shown object, person and terrain shape whose picture has an opaque
@@ -248,24 +440,19 @@ return {
       return probe.getImageData(0, 0, 1, 1).data[3] > 0;
     };
     function drawnAt(fx, fy) {
-      const px = fx * 8, py = fy * 8, tx = Math.floor(fx), ty = Math.floor(fy), cand = [];
-      // a picture lies up and left of its object's square: look at the squares from here to 2 chunks down and right
-      for (let y = ty; y < Math.min(N, ty + 32); y++) for (let x = tx; x < Math.min(N, tx + 32); x++) { const sf = groundAt(d, x, y); if (!isFlat(sf)) cand.push({x, y, z: 0, sf, t: -1}); }
-      for (let cy = ty >> 4; cy <= Math.min(CH - 1, (ty >> 4) + 2); cy++) for (let cx = tx >> 4; cx <= Math.min(CH - 1, (tx >> 4) + 2); cx++)
-        for (const i of d.byChunk[cy * CH + cx]) if (shown(i)) cand.push({x: d.obj.x[i], y: d.obj.y[i], z: d.obj.z[i], sf: d.obj.sf[i], t: i});
-      for (const n of people) if (n.pz < cut && n.px >= tx && n.py >= ty && n.px < tx + 16 && n.py < ty + 16) cand.push({x: n.px, y: n.py, z: n.pz, sf: n.sf, t: -2, n});
-      const hits = cand.filter(o => box(d, o) && opaque(o, px, py));
-      hits.sort((a, b) => a.z - b.z || (a.x + a.y) - (b.x + b.y) || a.y - b.y);
-      return paintOrder(hits).reverse();
+      const px = fx * 8, py = fy * 8, tx = Math.floor(fx), ty = Math.floor(fy);
+      // a picture lies up and left of its object's square: the objects from here to 2 chunks down and right
+      return order(tx - 2, ty - 2, tx + 32, ty + 32, keeper(new Set())).filter(o => box(d, o) && opaque(o, px, py));
     }
     // what a container holds, nested, each line with the item's picture
-    const count = (s, q) => (d.tfa[s * 3 + 1] & 15) === 3 && q > 1 ? q : 0;   // a stack: its quality is how many
+    const count = (s, q) => (d.tfa[s * 3 + 1] & 15) === 3 && (q & 0x7F) > 1 ? q & 0x7F : 0;   // a stack (class 3): quality's low 7 bits are how many (common/item.c)
     const keyNote = q => { const n = d.locks.get(q) || 0; return ` <span class="muted">(opens lock ${q}${n > 1 ? `: ${n} locked chests${n > 20 ? ', a skeleton key' : ''}` : n ? ': 1 locked chest' : ''})</span>`; };
     const holds = (items, depth = 0) => `<ul class="holds">${items.slice(0, 40).map(it => `<li>${icon(d, it[0] | it[1] << 10)} ${esc(name(d, it[0] | it[1] << 10, count(it[0], it[2])))}${it[0] === KEY ? keyNote(it[2]) : ''}${it.length > 3 && depth < 3 ? holds(it.slice(3), depth + 1) : ''}</li>`).join('')}${items.length > 40 ? `<li class="muted">and ${items.length - 40} more</li>` : ''}</ul>`;
     // where the keys numbered q are, as text and links
     const keyPlaces = (q, links) => {
       const ks = d.keys.get(q) || [];
-      if (!ks.length) return p('<span class="muted">No key with this number is in the game at the start: it has to be picked or opened by magic.</span>');
+      // lockpicks open only lock 0 (decomp usecode Lockpick.use)
+      if (!ks.length) return p(`<span class="muted">No key with this number is in the game at the start: ${q ? 'only magic opens it' : 'a lockpick or magic opens it'}.</span>`);
       const lines = ks.slice(0, 6).map(k => {
         links.push({label: k.who ? `Key: ${pname(k.who)}` : `Key at ${k.x}, ${k.y}`, focus: [k.x, k.y]});
         return k.who ? `${esc(pname(k.who))} carries it.` : k.where === 'in' ? `In a ${esc(name(d, k.box).toLowerCase())} at ${k.x}, ${k.y}.` : `On the ground at ${k.x}, ${k.y}.`;
@@ -298,8 +485,11 @@ return {
         let t = `${icon(d, d.obj.sf[i])} ${esc(name(d, d.obj.sf[i], count(s, q)))} <span class="muted">· height ${d.obj.z[i]}${d.obj.z[i] >= cut ? ' · above the cutoff (hidden)' : ''}${d.obj.fl[i] & 2 ? ' · invisible in the game (a trigger)' : ''}${d.obj.fl[i] & 1 ? '' : ', movable'}</span>`;
         if (s === KEY) t += keyNote(q);
         if (LOCKED.has(s)) t += `<br><b>Locked</b> <span class="muted">(lock ${q})</span>.${keyPlaces(q, links)}`;
-        // a door's locked state is in its frame; say only which key fits, when one does
-        if (DOORS.has(s) && q && d.keys.has(q)) t += `<br><span class="muted">Lock ${q}.</span>${keyPlaces(q, links)}`;
+        if (s === SEALED && cfg.id === 'u7bg') t += `<br><span class="muted">Sealed: it opens when used, no key needed.</span>`;
+        // a door's state is its frame mod 4 (2 locked, 3 magically locked)
+        const ds = (d.obj.sf[i] >> 10) & 3;
+        if (DOORS.has(s) && ds === 2) t += `<br><b>Locked</b> <span class="muted">(lock ${q})</span>.${keyPlaces(q, links)}`;
+        if (DOORS.has(s) && ds === 3) t += `<br><b>Magically locked</b> <span class="muted">: no key opens it, only a spell.</span>`;
         if (c) t += holds(c);
         return t;
       };
@@ -310,12 +500,12 @@ return {
     };
 
     return {
-      title: cfg.world, subtitle: `${cfg.subtitle} · height cutoff ${cut} · ${hh(hour)}`, width: N, height: N, native: 8, draw, cell, coords: cfg.coords,
+      title: cfg.world, subtitle: `${cfg.subtitle} · height cutoff ${cut} · ${hh(hour)}`, width: N, height: N, native: 8, draw, cell, coords: cfg.coords, animate: {ms: 100},
       features: people.map(n => ({name: pname(n), x: n.px, y: n.py, detail: n.act != null ? ACT[n.act] : ''})),
       svg: svgDoc(N, N, g('grid', `<path d="${Array.from({length: CH - 1}, (_, i) => `M${(i + 1) * 16} 0V${N}M0 ${(i + 1) * 16}H${N}`).join('')}" stroke="#fff" stroke-width=".5" opacity=".25" fill="none"/>`) + (cfg.overlay ? cfg.overlay.svg() : '')),
       info: `<h3>${cfg.world}</h3><p>3072 × 3072 squares, drawn as you pan, with the game’s ${d.obj.x.length.toLocaleString()} objects as they are at the start of a new game.</p>
         <p>Height cutoff ${cut}: objects at height ${cut} or above are hidden${cut <= 5 ? ', so most roofs are off' : ''}. Click a square to list everything on it and how high it sits.</p>
-        <p class="muted">Objects are drawn in the game’s order, as Exult works it out: nearest and highest on top. A click picks what is drawn under the pointer.</p>`,
+        <p class="muted">Objects are drawn in the game’s own order, worked out as the original program does it: nearest and highest on top. A click picks what is drawn under the pointer.</p>`,
       layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, ...(cfg.overlay ? cfg.overlay.layers : []), {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],
     };
   },

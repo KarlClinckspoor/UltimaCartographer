@@ -1,7 +1,7 @@
 // Ultima IV: Britannia, the 16 castles, townes and villages (and Lord British's upper floor), the 8
 // dungeons with their rooms, from the game files (data/u4, by tools/extract-u4.mjs). Townsfolk show
 // their whole conversation. Mechanics: u4-decompiled-port/docs/MECHANICS.md.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs} from '../../lib/draw.js';
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json, centredGlyphs, tileLayer, scrollRows, rnd, chain} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u4/', import.meta.url);
 
@@ -49,27 +49,87 @@ const load = () => loading ||= (async () => {
   const hex = h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16));
   for (const t of Object.values(d.towns)) t.bytes = hex(t.cells);
   for (const dn of Object.values(d.dungeons)) { dn.bytes = hex(dn.cells); for (const r of dn.rooms) r.bytes = hex(r.map); }
-  d.tiles = tiles; d.cache = {};
+  d.tiles = tiles;
   return d;
 })();
 
 const tname = (d, t) => (d.tileNames[t] || `tile ${t}`).toLowerCase().replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()).replace(/ [nsew]$/, '').replace(/ npc$/, '');
-const toBlobURL = c => new Promise(r => c.toBlob(b => r(URL.createObjectURL(b))));
 
-async function gridImages(d, key, bytes, w, h, chunk) {
-  if (d.cache[key]) return d.cache[key];
-  const out = [];
-  for (let cy = 0; cy < h; cy += chunk) for (let cx = 0; cx < w; cx += chunk) {
-    const cw = Math.min(chunk, w - cx), ch = Math.min(chunk, h - cy), c = canvas(cw * 16, ch * 16), ctx = c.getContext('2d');
-    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) blit(ctx, d.tiles, 16, bytes[(cy + y) * w + cx + x], x, y);
-    out.push({src: await toBlobURL(c), at: [cx, cy, cw, ch]});
-  }
-  return d.cache[key] = out;
+// ---------- animation (U4_ANIM.C, EGA.DRV) ----------
+// RefreshView redraws the view on every keyboard poll. Each redraw: AnimateTiles flows water, lava and the fields
+// once every speed_info redraws (Gra_AnimFlow: each tile's rows move down one pixel, the bottom row coming back at
+// the top), and flickers the campfire (Gra_AnimCampfire); AnimateNpcs moves the townsfolk's frames and
+// Gra_AnimFlags may swap two rows of each flag. speed_info is measured at start-up (LOW.ASM: calibration-loop runs
+// per timer tick / 1000): 2 under GOG's DOSBox (cycles=500), where a redraw takes roughly 150 ms (an estimate).
+const REDRAW_MS = 150, SPEED = 2;
+const FLOW = [0x00, 0x01, 0x02, 0x4C, 0x44, 0x45, 0x46, 0x47];
+// Gra_AnimFlags in EGA.DRV: rows swapped (whole 16-pixel rows of every plane), each with a 1-in-2 chance a redraw
+const FLAGS = {0x0A: [3, 4], 0x0B: [1, 2], 0x0E: [1, 2], 0x10: [2, 3], 0x12: [2, 3]};
+// Gra_AnimCampfire in EGA.DRV: rows 7-14 of the campfire (0x4B) have pixels whose green bit (plane 1) is flipped at
+// random each redraw (red <-> brown, light red <-> yellow): [row, mask of pixels 0-7, mask of pixels 8-15]
+const FIRE = [[7, 0x0C, 0x00], [8, 0x0D, 0x80], [9, 0x1F, 0xC0], [10, 0x1F, 0xC0], [11, 0x0F, 0x80], [12, 0x1F, 0xC0], [13, 0x12, 0x40], [14, 0x18, 0xC0]];
+const FIRE_KEYS = 64;
+const EGA_RGB = ['000000', '0000aa', '00aa00', '00aaaa', 'aa0000', 'aa00aa', 'aa5500', 'aaaaaa', '555555', '5555ff', '55ff55', '55ffff', 'ff5555', 'ff55ff', 'ffff55', 'ffffff'];
+const animated = [...FLOW, ...Object.keys(FLAGS).map(Number), 0x4B];
+function frame(n, tick) {
+  if (!tick) return 0;
+  if (FLOW.includes(n)) return Math.floor(tick / SPEED) % 16;
+  if (FLAGS[n]) return rnd(tick, n) < .5 ? 1 : 0;
+  if (n === 0x4B) return 1 + Math.floor(rnd(tick, n) * FIRE_KEYS);
+  return 0;
 }
-async function peopleImage(d, list, w, h) {
-  const c = canvas(w * 16, h * 16), ctx = c.getContext('2d');
-  for (const q of list) blit(ctx, d.tiles, 16, q.tile, q.x, q.y);
-  return toBlobURL(c);
+function picture(n, key, ctx) {
+  if (FLOW.includes(n)) return scrollRows(ctx, 16, key);
+  const img = ctx.getImageData(0, 0, 16, 16), d = img.data;
+  if (FLAGS[n]) {
+    const [a, b] = FLAGS[n], ra = d.slice(a * 64, a * 64 + 64);
+    d.copyWithin(a * 64, b * 64, b * 64 + 64); d.set(ra, b * 64);
+  } else if (n === 0x4B) {
+    FIRE.forEach(([y, lo, hi], r) => {
+      for (let x = 0; x < 16; x++) {
+        const bit = x < 8 ? lo >> (7 - x) & 1 : hi >> (15 - x) & 1;
+        if (!bit || rnd(key, r, x) < .5) continue;
+        const o = (y * 16 + x) * 4, hex = [0, 1, 2].map(c => d[o + c].toString(16).padStart(2, '0')).join('');
+        const c = EGA_RGB.indexOf(hex);
+        if (c >= 0) { const t = EGA_RGB[c ^ 2]; for (let k = 0; k < 3; k++) d[o + k] = parseInt(t.substr(2 * k, 2), 16); }
+      }
+    });
+  }
+  ctx.putImageData(img, 0, 0);
+}
+// AnimateNpcs, one redraw: townsfolk, party classes and sea creatures (base tile even) toggle their two frames with
+// a chance of 1/2 x NpcAnimChance[speed_info - 1] / 256; monsters (0x90 up) step through their four frames with a
+// chance of NpcAnimChance / 256; anything else shows its base tile.
+const NPC_CHANCE = [192, 96, 60, 36, 20, 12, 8][SPEED - 1] / 256;
+function townFrames(list) {
+  return list.map((q, i) => {
+    const t = q.tile, two = (t >= 0x84 && t <= 0x8F) || (t >= 0x20 && t <= 0x2F) || (t >= 0x50 && t <= 0x5F);
+    const base = two ? t & ~1 : t >= 0x90 ? t & ~3 : t;
+    if (!two && t < 0x90) return () => t;
+    return chain(t, (g, tick) => two ? (rnd(i, tick, 1) < .5 && rnd(i, tick, 2) < NPC_CHANCE ? ((g & 1) | base) ^ 1 : g)
+      : rnd(i, tick, 2) < NPC_CHANCE ? ((g + 1) & 3) | base : g);
+  });
+}
+// DrawCombat, one redraw (frame_mask = CombatAnimMask[speed_info - 1]): a monster keeps its frame 1 time in
+// mask + 1, else steps to its next frame 1 time in mask + 1; other foes toggle their frame 1 time in 4.
+const COMBAT_MASK = [1, 3, 3, 7, 7, 7, 7, 15][SPEED - 1] + 1;
+function combatFrames(list) {
+  return list.map((q, i) => {
+    const t = q.tile;
+    if (t === 0x38) return () => t;
+    if (t === 0xAC) return () => t;   // a mimic (shown as a chest in the game until it moves; here as itself)
+    if (t >= 0x90) return chain(t, (g, tick) => rnd(i, tick, 1) * COMBAT_MASK < 1 || rnd(i, tick, 2) * COMBAT_MASK >= 1 ? g : ((g + 1) & 3) | (t & ~3));
+    return chain(t, (g, tick) => rnd(i, tick, 1) < .25 ? g ^ 1 : g);
+  });
+}
+// the view's draw() and animate for a 16-pixel tile map, with sprites over it
+function animatedMap(d, bytes, w, h, sprites = [], spriteLayer, frames) {
+  const f = frames ? frames(sprites) : null;
+  return {
+    draw: tileLayer({w, h, sheet: d.tiles, at: (x, y) => bytes[y * w + x], frame, picture, animated,
+      sprites, spriteLayer, spriteTile: f && ((i, tick) => f[i](tick))}),
+    animate: {ms: REDRAW_MS},
+  };
 }
 
 const kindOf = n => n <= 4 ? 'castle' : n <= 12 ? 'towne' : n <= 16 ? 'village' : n <= 24 ? 'dungeon' : 'shrine';
@@ -81,7 +141,7 @@ const townId = n => n === 1 ? 'LCB_1' : TOWN_FILES[n - 1];
 // and low nibble, A for 0.
 export const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderWorld(d) {
-  const W = 256, images = await gridImages(d, 'world', d.worldBytes, W, W, 32);
+  const W = 256;
   let names = '', gates = '', items = '';
   const features = [];
   for (const pl of d.places) {
@@ -113,7 +173,7 @@ async function renderWorld(d) {
     <p>256 × 256 squares. Moongates: the open one follows Trammel’s phase, and where it sends you follows Felucca’s. Both moons reset to new whenever you load a saved game.</p>
     <p class="muted">Dotted green rings mark squares where Search finds something. The Shrine of Spirituality has no square of its own: only a moongate reaches it.</p>`;
   // the world wraps: the map window moves with & 0xff (U4_MAP.C)
-  return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, wrap: true, images, svg, cell, features, info, coords: sextant,
+  return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, wrap: true, ...animatedMap(d, d.worldBytes, W, W), svg, cell, features, info, coords: sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       {id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, C.gate, '', .14))},
       {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
@@ -145,8 +205,6 @@ function talkHTML(r) {
 async function renderTown(d, key) {
   const loc = key === 'LCB_2' ? 1 : TOWN_FILES.indexOf(key) + 1, t = d.towns[key], pl = d.places[loc - 1];
   const talk = d.talk[TALK_FILES[loc - 1]];
-  const images = await gridImages(d, key, t.bytes, 32, 32, 32);
-  images.push({src: await peopleImage(d, t.people, 32, 32), layer: 'people'});
   const at = (x, y) => t.bytes[y * 32 + x];
   const parts = {talkers: '', shops: '', items: '', start: key === 'LCB_2' ? '' : ring(15, 31, C.start, '.18 .1')};
   const features = [];
@@ -200,7 +258,7 @@ async function renderTown(d, key) {
     <p class="muted">Click anyone to read their whole conversation: name, look, job, health, their two keywords and their question.</p>`;
   return {
     title: key === 'LCB_2' ? 'Castle Britannia, upper floor' : pl.name, subtitle: kindOf(loc)[0].toUpperCase() + kindOf(loc).slice(1),
-    width: 32, height: 32, native: 16, images, svg, cell, features, info,
+    width: 32, height: 32, native: 16, ...animatedMap(d, t.bytes, 32, 32, t.people, 'people', townFrames), svg, cell, features, info,
     layers: [{id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, C.talk))},
       {id: 'shops', name: 'Shopkeepers', swatch: swatch(ring(0, 0, C.shop))}, {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
       ...(parts.start ? [{id: 'start', name: 'Where you enter', swatch: swatch(ring(0, 0, C.start, '.18 .1'))}] : []),
@@ -298,8 +356,6 @@ async function renderLevel(d, key, L) {
 
 async function renderRoom(d, key, n) {
   const di = DUNGEON_FILES.indexOf(key), room = d.dungeons[key].rooms[n], pl = d.places[16 + di];
-  const images = await gridImages(d, `${key}-room-${n}`, room.bytes, 11, 11, 11);
-  images.push({src: await peopleImage(d, room.foes, 11, 11), layer: 'foes'});
   let trig = '';
   for (const t of room.triggers) trig += ring(t.at[0], t.at[1], C.event, '.16 .1');
   const svg = svgDoc(11, 11, g('triggers', trig) + g('grid', gridLines(11, 11)));
@@ -313,7 +369,7 @@ async function renderRoom(d, key, n) {
   const count = foes.reduce((m, f) => (m[f] = (m[f] || 0) + 1, m), {});
   return {
     title: `${pl.name.replace(/!$/, '')}, room ${key === 'ABYSS' ? n % 16 : n}`, subtitle: levelOf ? `The Abyss, ${levelOf}` : 'Dungeon room',
-    width: 11, height: 11, native: 16, images, svg, cell, features: room.foes.map(f => ({name: tname(d, f.tile), x: f.x, y: f.y})),
+    width: 11, height: 11, native: 16, ...animatedMap(d, room.bytes, 11, 11, room.foes, 'foes', combatFrames), svg, cell, features: room.foes.map(f => ({name: tname(d, f.tile), x: f.x, y: f.y})),
     info: `<h3>Room ${key === 'ABYSS' ? n % 16 : n}</h3><p>Foes: ${Object.entries(count).map(([k, v]) => `${v} × ${esc(k)}`).join(', ') || 'none'}.</p>
       ${n === 15 && key !== 'ABYSS' ? '<p>The altar room: which part of the Key of Three Parts it gives depends on the square of the level you entered from (Truth at x 0–2, Love at x 3, Courage beyond). Stand on (5, 5) and name the stones.</p>' : ''}
       ${room.triggers.length ? '<p>Dotted squares are triggers that change the room when stepped on.</p>' : ''}

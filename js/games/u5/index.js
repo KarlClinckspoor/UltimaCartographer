@@ -1,7 +1,7 @@
 // Ultima V: Britannia and the Underworld, the 32 settlements floor by floor, the 8 dungeons and their
 // rooms, from the game files (data/u5, by tools/extract-u5.mjs). Townsfolk stand where their schedule
 // puts them at the hour chosen, and show their whole conversation. Game logic: u5-decompiled/u5d/src.
-import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, blit, image, json} from '../../lib/draw.js';
+import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, tileLayer, rnd, chain} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u5/', import.meta.url);
 
@@ -33,28 +33,148 @@ const load = () => loading ||= (async () => {
   for (const t of Object.values(d.towns)) { t.bytes = {}; for (const [z, h] of Object.entries(t.floors)) t.bytes[z] = hex(h); t.people = t.people.filter(q => q.type); }
   d.dungeonBytes = d.dungeons.map(hex);
   for (const r of d.rooms) r.bytes = hex(r.map);
-  d.tiles = tiles; d.cache = {};
+  d.tiles = tiles;
   return d;
 })();
 
 const cap = s => s.replace(/^\w/, c => c.toUpperCase());
 const tname = (d, t) => { const s = d.look[t]; return !s || s === 'x' || s === '*' ? `Tile ${t}` : cap(s.replace(/^(a|an|some) /, '')); };
-const toBlobURL = c => new Promise(r => c.toBlob(b => r(URL.createObjectURL(b))));
-async function gridImages(d, key, bytes, w, h, chunk) {
-  if (d.cache[key]) return d.cache[key];
-  const out = [];
-  for (let cy = 0; cy < h; cy += chunk) for (let cx = 0; cx < w; cx += chunk) {
-    const cw = Math.min(chunk, w - cx), ch = Math.min(chunk, h - cy), c = canvas(cw * 16, ch * 16), ctx = c.getContext('2d');
-    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) blit(ctx, d.tiles, 16, bytes[(cy + y) * w + cx + x], x, y);
-    out.push({src: await toBlobURL(c), at: [cx, cy, cw, ch]});
-  }
-  return d.cache[key] = out;
+// ---------- animation (u5d src/world.c AnimateActors, AnimateTiles; EGA.DRV's tile routine, driver call 0x60) ----------
+// While the game waits for a key (party.c GetChar) it waits for the next timer tick (pollkey.c, WaitTicks(1)) and
+// then makes one animation pass and redraws (view.c UpdateFrame): about 110 ms a pass under GOG's DOSBox (OpenU5
+// measured 110-117 ms). One pass:
+//   AnimateTiles: waterfalls (D4-D7) and fountains (D8-DB) step to their next frame; on odd passes the snake sign
+//     (EC-EF) steps and the torture tiles (80-83) swap with their partner; on every fourth pass the clock (FA-FB) and
+//     the bellows (FC-FD) swap. A square shows tileFrames[its tile], so neighbours in a group keep their offsets.
+//   EGA.DRV: water (01-03) and lava (8F) scroll down one pixel row (the bottom row comes back at the top; deep ocean,
+//     00, keeps still); rivers (60-6F, masks 70-7F), coasts (34-37) and water corners (E4-E7, masks D0-D3) get the
+//     scrolled water copied into their water (the mask's bright pixels); the keep, castle and pennant (12, 15, 3E)
+//     swap pixel rows 0 and 2, the small castle (14) rows 2 and 4 of its left half, each with a 1-in-2 chance; and
+//     fires, sconces and stoves (B0-B3, BC-BF, DE) flicker: their colour bits under the mask tiles (C0-C3, CC-CF,
+//     C2) are XORed with random bits, so they come out at random.
+//   AnimateActors: every person and creature runs its own little script of frames (animSequences, ultima.c).
+const PASS_MS = 110;
+const EGA_RGB = ['000000', '0000aa', '00aa00', '00aaaa', 'aa0000', 'aa00aa', 'aa5500', 'aaaaaa', '555555', '5555ff', '55ff55', '55ffff', 'ff5555', 'ff55ff', 'ffff55', 'ffffff'];
+const SCROLL = new Set([0x01, 0x02, 0x03, 0x8F]);
+const maskOf = n => n >= 0x60 && n <= 0x6F ? n + 0x10 : n >= 0x34 && n <= 0x37 ? n - 0x34 + 0xD0 : n >= 0xE4 && n <= 0xE7 ? n - 0xE4 + 0xD0 : -1;
+const FLAGS = {0x12: [0, 2, 16], 0x15: [0, 2, 16], 0x3E: [0, 2, 16], 0x14: [2, 4, 8]};   // rows swapped, pixels wide
+const fireMask = n => (n >= 0xB0 && n <= 0xB3) || (n >= 0xBC && n <= 0xBF) ? n + 0x10 : n === 0xDE ? 0xC2 : -1;
+const FIRE_KEYS = 64;
+// the tile a square of tile n shows after `tick` passes (AnimateTiles)
+function shownTile(n, tick) {
+  const cycle = (base, k) => base + ((n - base + k) & 3);
+  if (n >= 0xD4 && n <= 0xD7) return cycle(0xD4, tick);
+  if (n >= 0xD8 && n <= 0xDB) return cycle(0xD8, tick);
+  if (n >= 0xEC && n <= 0xEF) return cycle(0xEC, tick >> 1);
+  if (n >= 0x80 && n <= 0x83) return n ^ ((tick >> 1) & 1);
+  if (n >= 0xFA && n <= 0xFD) return n ^ ((tick >> 2) & 1);
+  return n;
 }
-async function spritesImage(d, list, w, h) {
-  const c = canvas(w * 16, h * 16), ctx = c.getContext('2d');
-  for (const q of list) blit(ctx, d.tiles, 16, q.tile, q.x, q.y);
-  return toBlobURL(c);
+const cycles = n => shownTile(n, 1) !== n || shownTile(n, 2) !== n || shownTile(n, 4) !== n;
+const animated = [];
+for (let n = 0; n < 0x100; n++) if (cycles(n) || SCROLL.has(n) || maskOf(n) >= 0 || FLAGS[n] || fireMask(n) >= 0) animated.push(n);
+function frame(n, tick) {
+  if (!tick || n >= 0x100) return 0;
+  if (SCROLL.has(n)) return tick % 16;
+  if (maskOf(n) >= 0) return 1 + tick % 16;
+  if (FLAGS[n]) return rnd(tick, n) < .5 ? 1 : 0;
+  if (fireMask(n) >= 0) return 1 + Math.floor(rnd(tick, n) * FIRE_KEYS);
+  const t = shownTile(n, tick);
+  return t === n ? 0 : t;
 }
+let sheetPx = null;
+const tileCache = new Map(), waterCache = new Map();
+const waterAt = (d, by) => waterCache.get(by) || waterCache.set(by, scrolled(tilePx(d, 0x03), by)).get(by);
+function tilePx(d, n) {
+  if (tileCache.has(n)) return tileCache.get(n);
+  if (!sheetPx) { const c = canvas(d.tiles.width, d.tiles.height), x = c.getContext('2d'); x.drawImage(d.tiles, 0, 0); sheetPx = x.getImageData(0, 0, c.width, c.height); }
+  const out = new Uint8ClampedArray(16 * 16 * 4), ox = (n % 16) * 16, oy = (n >> 4) * 16;
+  for (let y = 0; y < 16; y++) out.set(sheetPx.data.subarray(((oy + y) * sheetPx.width + ox) * 4, ((oy + y) * sheetPx.width + ox + 16) * 4), y * 64);
+  tileCache.set(n, out);
+  return out;
+}
+const EGA_INDEX = new Map(EGA_RGB.map((h, i) => [parseInt(h, 16), i]));
+const egaOf = (px, o) => EGA_INDEX.get(px[o] << 16 | px[o + 1] << 8 | px[o + 2]) ?? -1;
+const setEga = (px, o, c) => { const v = parseInt(EGA_RGB[c], 16); px[o] = v >> 16; px[o + 1] = v >> 8 & 255; px[o + 2] = v & 255; };
+function scrolled(px, by) {
+  const out = new Uint8ClampedArray(px.length);
+  for (let y = 0; y < 16; y++) out.set(px.subarray(y * 64, y * 64 + 64), ((y + by) % 16) * 64);
+  return out;
+}
+function picture(d) {
+  return (n, key, ctx) => {
+    if (cycles(n)) {
+      // a frame of a cycling group: another tile's picture
+      ctx.drawImage(d.tiles, (key % 16) * 16, (key >> 4) * 16, 16, 16, 0, 0, 16, 16);
+      return;
+    }
+    const img = ctx.getImageData(0, 0, 16, 16), px = img.data;
+    if (SCROLL.has(n)) px.set(scrolled(px, key));
+    else if (maskOf(n) >= 0) {
+      const water = waterAt(d, key - 1), mask = tilePx(d, maskOf(n));
+      for (let o = 0; o < px.length; o += 4) if (egaOf(mask, o) >= 8) px.set(water.subarray(o, o + 4), o);
+    } else if (FLAGS[n]) {
+      const [a, b, wide] = FLAGS[n], ra = px.slice(a * 64, a * 64 + wide * 4);
+      px.copyWithin(a * 64, b * 64, b * 64 + wide * 4); px.set(ra, b * 64);
+    } else if (fireMask(n) >= 0) {
+      const mask = tilePx(d, fireMask(n));
+      for (let o = 0; o < px.length; o += 4) {
+        const m = egaOf(mask, o), c = egaOf(px, o);
+        if (m > 0 && c >= 0) setEga(px, o, c ^ (Math.floor(rnd(key, o) * 16) & m));
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  };
+}
+// AnimateActors for one actor (its actor tile, 0x34 up): its frame after each pass, from its script. A pass with a
+// wait pending only counts it down; otherwise half the passes do nothing (not for the playing bard, 5C, or the
+// mimic, A8), and the rest run the script until it shows a frame or starts a wait: 1-4 show frame base + op - 1,
+// 0 starts again, 5 shows the actor's own tile and waits 6 one time in 4, 6 starts again 3 times in 4, 7 goes to
+// step 2, 8N waits N passes (8F: for good).
+const SEQ = [
+  [2, 3, 4, 5], [1, 2, 3, 4], [1, 2, 3, 4, 3, 4, 1, 2], [1, 2, 3, 4, 0x87], [1, 0x8F, 2, 3, 4], [2, 0x84, 3, 0x84, 4, 0x84, 5],
+  [1, 2, 1, 2, 3, 4, 2, 3, 4], [2, 3, 4, 3, 2, 5], [1, 0x8F, 2, 3, 4, 7], [2, 0x82, 3, 0x82, 4, 0x82, 6, 1], [1, 2, 3, 5]];
+// animSequences[0xb0 + (base - 0x34) / 4]: which script each family of four frames runs
+const SEQ_OF = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 9, 0, 1, 6, 1, 1, 0, 4, 0, 3, 0, 10, 0, 1, 0, 1, 0, 1,
+  0, 1, 7, 0, 7, 0, 0, 2, 8, 0, 0];
+function actorFrames(tiles) {
+  return tiles.map((tile, i) => {
+    const base = tile & 0xFC;
+    if (base < 0x34 || base === 0xE8 || base === 0xB4) return () => tile;
+    const seq = SEQ[SEQ_OF[(base - 0x34) >> 2]] || [];
+    const op = k => k < seq.length ? seq[k] : 0;
+    const run = chain({step: 0, delay: 0, anim: tile}, (s, tick) => {
+      let {step, delay, anim} = s, r = 0;
+      if (delay === 0xF) return s;
+      if (delay) return {step, delay: delay - 1, anim};
+      if (base !== 0x5C && base !== 0xA8 && rnd(i, tick, r++) < .5) return s;
+      for (let guard = 0; guard < 32; guard++) {
+        const o = op(step);
+        if (o === 0) { step = 0; continue; }
+        if (o <= 4) { anim = base + o - 1; step++; break; }
+        if (o === 5) {
+          if (rnd(i, tick, r++) < .25) { anim = tile; if (base === 0x5C) step++; else delay = 6; break; }
+          step++; continue;
+        }
+        if (o === 6) { if (rnd(i, tick, r++) < .75) step = 0; else step++; continue; }
+        if (o === 7) { step = 2; continue; }
+        delay = o - 0x80; step++; break;
+      }
+      return {step, delay, anim};
+    });
+    return tick => run(tick).anim;
+  });
+}
+// the view's draw() and animate for a 16-pixel tile map, with people over it (sprite tile = 0x100 + actor tile)
+function animatedMap(d, bytes, w, h, sprites = [], spriteLayer) {
+  const f = actorFrames(sprites.map(q => q.tile - 0x100));
+  return {
+    animate: {ms: PASS_MS},
+    draw: tileLayer({w, h, sheet: d.tiles, at: (x, y) => bytes[y * w + x], frame, picture: picture(d), animated,
+      sprites, spriteLayer, spriteTile: (i, tick) => 0x100 + f[i](tick)}),
+  };
+}
+
 function itemText(d, h) {
   let s = ITEM[h.tile] || tname(d, h.tile + 0x100).toLowerCase();
   if (EQUIP_ITEM.has(h.tile) && d.equip[h.value]) s += `: ${d.equip[h.value]}`;
@@ -73,7 +193,6 @@ const signHTML = s => `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>
 export const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderBig(d, under) {
   const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
-  const images = await gridImages(d, under ? 'under' : 'brit', bytes, W, W, 32);
   const parts = {names: '', shrines: '', gates: '', signs: '', items: ''}, features = [];
   // a place belongs on the map whose square there is a settlement or dungeon tile: Ararat and Doom lie in the Underworld,
   // and the same squares in Britannia are plain terrain (and the reverse for every other place)
@@ -113,7 +232,7 @@ async function renderBig(d, under) {
     : `<h3>Britannia</h3><p>256 × 256 squares. The eight moonstones start buried at the moongates; at night a gate stands wherever a stone lies buried.</p>
        <p class="muted">Dotted green rings mark squares where Search finds something; dotted white ones are signs.</p>`;
   // both wrap: the position is a byte and the outdoor chunk window is masked with & 0x1f (mainout.c)
-  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, wrap: true, images, svg, cell, features, info, coords: under ? null : sextant,
+  return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, wrap: true, ...animatedMap(d, bytes, W, W), svg, cell, features, info, coords: under ? null : sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
       ...(under ? [] : [{id: 'shrines', name: 'Shrines', swatch: swatch(label(.5, .8, 'S', .9, C.shrine))}, {id: 'gates', name: 'Moongates (at game start)', swatch: swatch(ring(0, 0, C.gate, '', .14))}]),
       {id: 'signs', name: 'Signs', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))},
@@ -153,8 +272,6 @@ async function renderTown(d, n, z, hour) {
   const t = d.towns[n], pl = d.places[n - 1], bytes = t.bytes[z], floors = Object.keys(t.bytes).map(Number).sort((a, b) => a - b);
   const at = (x, y) => bytes[y * 32 + x];
   const here = t.people.map(q => { const s = slotAt(q, hour); return {...q, slot: s, px: q.x[s], py: q.y[s], pz: q.z[s]}; }).filter(q => q.pz === z);
-  const images = [...await gridImages(d, `P${n}.${z}`, bytes, 32, 32, 32)];
-  images.push({src: await spritesImage(d, here.map(q => ({tile: q.type + 0x100, x: q.px, y: q.py})), 32, 32), layer: 'people'});
   const scripts = d.talk[t.file];
   const shopOf = q => { if (q.talk < 0x81 || q.talk > 0x88) return null; const k = q.talk - 0x81, i = d.shops.maps[k].indexOf(n); return {kind: SHOP_KIND[k], name: i >= 0 ? d.shops.names[k][i] : SHOP_KIND[k], keeper: i >= 0 ? d.shops.keepers[k][i] : ''}; };
   const parts = {talkers: '', shops: '', stairs: '', signs: '', items: ''}, features = [];
@@ -203,7 +320,7 @@ async function renderTown(d, n, z, hour) {
     <p class="muted">Dashed violet rings: stairs and ladders. Dotted green: search here. Dotted white: signs.</p>`;
   return {
     title: pl.name, subtitle: `${KIND(n).replace(/s$/, '')}${floors.length > 1 ? ` · ${FLOOR(z)}` : ''} · ${hh(hour)}`,
-    width: 32, height: 32, native: 16, images, svg, cell, features, info,
+    width: 32, height: 32, native: 16, ...animatedMap(d, bytes, 32, 32, here.map(q => ({tile: q.type + 0x100, x: q.px, y: q.py})), 'people'), svg, cell, features, info,
     layers: [{id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, C.talk))},
       {id: 'shops', name: 'Shopkeepers', swatch: swatch(ring(0, 0, C.shop))}, {id: 'stairs', name: 'Stairs and ladders', swatch: swatch(ring(0, 0, C.stair, '.2 .1', .08))},
       {id: 'signs', name: 'Signs', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))}, {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
@@ -326,8 +443,6 @@ function renderLevel(d, k, L) {
 
 async function renderRoom(d, k, r) {
   const room = d.rooms[roomIndex(k, r)], pl = d.places[32 + k];
-  const images = [...await gridImages(d, `D${k}-room-${r}`, room.bytes, 11, 11, 11)];
-  images.push({src: await spritesImage(d, room.foes, 11, 11), layer: 'foes'});
   let trig = '';
   for (const t of room.triggers) trig += ring(t.at[0], t.at[1], C.event, '.16 .1');
   const svg = svgDoc(11, 11, g('triggers', trig) + g('grid', gridLines(11, 11)));
@@ -343,7 +458,7 @@ async function renderRoom(d, k, r) {
   const foes = room.foes.map(f => tname(d, f.tile)), count = foes.reduce((m, f) => (m[f] = (m[f] || 0) + 1, m), {});
   const sides = Object.keys(room.starts);
   return {
-    title: `${pl.name}, room ${r}`, subtitle: 'Dungeon room', width: 11, height: 11, native: 16, images, svg, cell,
+    title: `${pl.name}, room ${r}`, subtitle: 'Dungeon room', width: 11, height: 11, native: 16, ...animatedMap(d, room.bytes, 11, 11, room.foes, 'foes'), svg, cell,
     features: room.foes.map(f => ({name: tname(d, f.tile), x: f.x, y: f.y})),
     info: `<h3>${esc(pl.name)}, room ${r}</h3><p>In it: ${Object.entries(count).map(([kk, v]) => `${v} × ${esc(kk)}`).join(', ') || 'nothing'}.</p>
       ${doors.length ? `<p>Its doors: ${doors.map(o => `<a href="#" data-go='${JSON.stringify({map: `D${k}-${o.L}`, focus: [o.x, o.y]})}'>level ${o.L} (${o.x}, ${o.y})</a>`).join(', ')}.</p>` : ''}

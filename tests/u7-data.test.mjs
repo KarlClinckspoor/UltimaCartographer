@@ -25,7 +25,7 @@ check('objects.bin is whole records', objs.length % R === 0);
 for (let o = 0; o < objs.length; o += R) { if (!(objs[o + 5] & 2) && !hasFrame(objs.readUInt16LE(o + 6))) objMissing++; if (objs.readUInt16LE(o) >= 3072 || objs.readUInt16LE(o + 2) >= 3072 || objs[o + 4] > 15) outside++; }
 check(`object frames in the atlas (missing ${objMissing})`, objMissing < 50);
 check('objects lie on the map with lifts 0-15', outside === 0);
-check('objects sorted by y, then x', (() => { for (let o = R; o < objs.length; o += R) { const a = objs.readUInt16LE(o - R + 2) * 4096 + objs.readUInt16LE(o - R), b = objs.readUInt16LE(o + 2) * 4096 + objs.readUInt16LE(o); if (b < a) return false; } return true; })());
+check('objects grouped by chunk, movable before fixed', (() => { const k = o => ((objs.readUInt16LE(o + 2) >> 4) * 192 + (objs.readUInt16LE(o) >> 4)) * 2 + (objs[o + 5] & 1); for (let o = R; o < objs.length; o += R) if (k(o) < k(o - R)) return false; return true; })());
 check('shape names (TEXT.FLX)', d.names.length === 1024 && d.names.some(n => /moongate/i.test(n)));
 const npc = name => d.npcs.find(n => n.name === name);
 check('NPC 0 is the Avatar', d.npcs[0].n === 0 && d.npcs[0].name === 'Avatar');

@@ -27,6 +27,10 @@ for (const g of ['u6', 'se', 'md']) {
   const all = objects(d.bin('objblk.bin'), 64).concat(objects(d.bin('dngblk.bin'), 5));
   check(`${g}: objects on the map stay in it`, all.filter(r => !(r.status & 0x18)).every(r => r.z <= 5 && (r.z === 0 || (r.x < 256 && r.y < 256))));
   // (Martian Dreams also parks some people on a level 6 that has no map; they are not drawn)
+  // animation (gameloop.c AnimateTilesAndActors): every frame shown and every changing tile has its pixels
+  const a = d.anim;
+  check(`${g}: animation frames have pixels`, a && a.tiles.every(([t, first, mask, shift]) => a.dyn.includes(t) && Array.from({length: (mask >> shift) + 1}, (_, k) => first + k).every(f => a.pix[f])));
+  check(`${g}: changing tiles have pixels`, a.dyn.every(t => a.pix[t] || a.tiles.some(e => e[0] === t)));
   check(`${g}: schedules point at real squares`, d.schedule.flat().filter(e => e[4] <= 5).every(e => e[4] === 0 || (e[2] < 256 && e[3] < 256)));
 }
 
@@ -40,6 +44,9 @@ for (const g of ['u6', 'se', 'md']) {
   check('U6: moonstones', JSON.stringify(ms) === JSON.stringify([[0x3A7, 0x106, 0], [0x1F7, 0x166, 0], [0x09F, 0x3AE, 0], [0x127, 0x026, 0], [0x33F, 0x0A6, 0], [0x147, 0x336, 0], [0x017, 0x016, 1], [0x397, 0x3A6, 0]]));
   check('U6: the game starts at 8:00 on 4/7/161 with karma 75', ol[7153 + 3] === 8 && ol[7153 + 4] === 4 && ol[7153 + 5] === 7 && ol.readUInt16LE(7153 + 6) === 161 && ol[7153 + 8] === 75);
   check("U6: book 55 is Iolo's Place", d.books[54] === "Iolo's Place");
+  check('U6: water tiles 8-F cycle 8 frames from 1C0h (ANIMDATA)', d.anim.tiles.filter(e => e[0] >= 8 && e[0] <= 15).every(e => e[1] === 0x1C0 + (e[0] - 8) * 8 && e[2] === 0xE && e[3] === 1));
+  check('U6: chains, cranks and bells are still at the start (console.c GAME_Load)', ![0x3F1, 0x3FC].some(t => d.anim.tiles.some(e => e[0] === t)));
+  check('U6: 32 shore tiles with ANIMMASK masks', d.anim.shore.src.length === 32 && Buffer.from(d.anim.shore.masks, 'base64').length === 2048);
   check('U6: every conversation has a name', Object.values(d.talk).every(t => t.name));
   // map.c PartyChangeLevel: down from the surface divides the chunk coordinates by 4; the ladder up on level 1
   // multiplies them back and adds 8 or 16 by the bits of its quality. Each way down must lead to a way up back home.

@@ -12,6 +12,124 @@ const clean = s => (s || '').replace(/\\(\w*)/g, '').replace(/\/\w*/g, '').trim(
 // objlist (console.c GAME_Load): the arrays for objects 0-FFh (the NPCs), then the game state.
 const OL = {status: 0, pos: 0x100, shape: 0x400, amount: 0x600, orig: 5617, state: 7153};
 
+// ---------- animation (data from tools/extract-u6.mjs, which says where each rule comes from) ----------
+// At display tick n (the game's AnimFrameCounter and PaletteCycle, both n after n ticks):
+//   an ANIMDATA tile shows frame first + ((n & mask) >> shift)   (AnimateTilesAndActors, gameloop.c)
+//   Ultima VI's shore tiles 10h-2Fh take their water tile's pixels through a mask, on even n (GR_ANIMATE_TILES)
+//   colours E0h-E7h and E8h-EFh rotate a step a tick, F0h-F3h, F4h-F7h, F8h-FBh every second tick, and FFh pulses
+//   through grey levels 12-19 and back (PaletteAnimation, main.c)
+// Every tile that can change has a slot in a small sheet, repainted once per tick for the tiles that changed.
+function animator(raw, basePal) {
+  const dyn = raw.dyn, slot = new Int16Array(0x800).fill(-1);
+  dyn.forEach((t, i) => { slot[t] = i; });
+  const pix = new Map();
+  const GROUP = c => c >= 0xE0 && c <= 0xEF ? 1 : c >= 0xF0 && c <= 0xFB ? 2 : c === 0xFF ? 4 : 0;
+  for (const [k, b64] of Object.entries(raw.pix)) {
+    const b = Uint8Array.from(atob(b64), c => c.charCodeAt(0)), idx = b.subarray(0, 256), alpha = new Uint8Array(256);
+    let g = 0;
+    for (let i = 0; i < 256; i++) if (b[256 + (i >> 3)] >> (i & 7) & 1) { alpha[i] = 1; g |= GROUP(idx[i]); }
+    pix.set(+k, {idx, alpha, g});
+  }
+  const anim = new Map(raw.tiles.map(([t, first, mask, shift]) => [t, {first, mask, shift}]));
+  const frameOf = (t, n) => { const a = anim.get(t); return a ? a.first + ((n & a.mask) >> a.shift) : t; };
+  const framesOf = t => { const a = anim.get(t); return a ? Array.from({length: (a.mask >> a.shift) + 1}, (_, k) => a.first + k) : [t]; };
+  // shore masks (ANIMMASK.VGA): byte counts copy, skip, copy, ... ending with 0
+  let shore = null;
+  if (raw.shore) {
+    const m = Uint8Array.from(atob(raw.shore.masks), c => c.charCodeAt(0));
+    shore = raw.shore.src.map((src, k) => {
+      const copy = new Uint8Array(256);
+      let p = k * 64, i = 0, n = m[p++];
+      for (let j = 0; j < n && i < 256; j++) copy[i++] = 1;
+      for (;;) {
+        n = m[p++]; if (!n) break; i += n;
+        n = m[p++]; if (!n) break;
+        for (let j = 0; j < n && i < 256; j++) copy[i++] = 1;
+      }
+      return {src, copy};
+    });
+  }
+  const shoreOf = t => shore && t >= raw.shore.first && t < raw.shore.first + 32 ? shore[t - raw.shore.first] : null;
+  // the colour groups each slot may show
+  const groups = dyn.map(t => {
+    const s = shoreOf(t), sets = [...framesOf(t), ...(s ? framesOf(s.src) : [])];
+    return sets.reduce((g, f) => g | (pix.get(f)?.g || 0), 0);
+  });
+  // what a slot shows at tick n, as a number (equal numbers, equal pixels); n = 0: the static picture
+  const keyOf = (i, n) => {
+    if (!n) return -1;
+    const t = dyn[i], s = shoreOf(t), g = groups[i];
+    const tri = (n - 1) & 15;
+    return (((frameOf(t, n) * 2049 + (s && n >= 2 ? frameOf(s.src, n & ~1) + 1 : 0)) * 8 + (g & 1 ? n & 7 : 0)) * 4 + (g & 2 ? (n >> 1) & 3 : 0)) * 16 + (g & 4 ? (tri > 7 ? 15 - tri : tri) : 0);
+  };
+  const keyMemo = new Map();
+  const keysAt = n => {
+    let k = keyMemo.get(n);
+    if (!k) { k = Float64Array.from(dyn, (_, i) => keyOf(i, n)); keyMemo.set(n, k); if (keyMemo.size > 6) keyMemo.delete(keyMemo.keys().next().value); }
+    return k;
+  };
+  // tiles that look different at tick b than at tick a
+  let chMemo = null;
+  const changed = (a, b) => {
+    if (chMemo && chMemo.a === a && chMemo.b === b) return chMemo.f;
+    const ka = keysAt(a), kb = keysAt(b), f = new Uint8Array(0x800);
+    dyn.forEach((t, i) => { if (ka[i] !== kb[i]) f[t] = 1; });
+    chMemo = {a, b, f};
+    return f;
+  };
+  const palAt = n => {
+    const p = basePal.slice(), tri = (n - 1) & 15, grey = Math.round(((tri > 7 ? 15 - tri : tri) + 12) * 255 / 63);
+    for (let j = 0; j < 8; j++) { p[0xE0 + j] = basePal[0xE7 - ((n - j) & 7)]; p[0xE8 + j] = basePal[0xEF - ((n - j) & 7)]; }
+    for (let j = 0; j < 4; j++) for (const b of [0xF0, 0xF4, 0xF8]) p[b + j] = basePal[b + 3 - (((n >> 1) - j) & 3)];
+    p[0xFF] = [grey, grey, grey];
+    return p;
+  };
+  const cols = 32, rows = Math.ceil(dyn.length / cols) || 1;
+  const sheet = document.createElement('canvas');
+  sheet.width = cols * 16; sheet.height = rows * 16;
+  const sctx = sheet.getContext('2d'), img = sctx.createImageData(sheet.width, sheet.height), cur = new Float64Array(dyn.length).fill(NaN);
+  let at = -1;
+  // paint the sheet for tick n (n > 0)
+  function frame(n) {
+    if (at === n) return;
+    at = n;
+    const keys = keysAt(n), pal = palAt(n), px = img.data;
+    let dirty = false;
+    for (let i = 0; i < dyn.length; i++) {
+      if (cur[i] === keys[i]) continue;
+      cur[i] = keys[i]; dirty = true;
+      const t = dyn[i], s = shoreOf(t), base = pix.get(s ? t : frameOf(t, n));
+      if (!base) continue;
+      const over = s && n >= 2 ? pix.get(frameOf(s.src, n & ~1)) : null;
+      const ox = (i % cols) * 16, oy = Math.floor(i / cols) * 16;
+      for (let q = 0; q < 256; q++) {
+        const src = over && s.copy[q] ? over : base, o = ((oy + (q >> 4)) * sheet.width + ox + (q & 15)) * 4;
+        if (!src.alpha[q]) { px[o + 3] = 0; continue; }
+        const c = pal[src.idx[q]];
+        px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
+      }
+    }
+    if (dirty) sctx.putImageData(img, 0, 0);
+  }
+  // slot i drawn at s pixels (s = 8 or 16) for the current frame, 32 times side by side: a run of the same tile
+  // along a row (open water) is then one drawImage
+  const strips = new Map();
+  function strip(i, s) {
+    const id = i * 32 + s;
+    let c = strips.get(id);
+    if (!c) { const cv = document.createElement('canvas'); cv.width = s * 32; cv.height = s; c = {cv, ctx: cv.getContext('2d'), key: NaN}; strips.set(id, c); }
+    if (c.key !== cur[i]) {
+      c.key = cur[i];
+      c.ctx.clearRect(0, 0, s * 32, s);
+      c.ctx.imageSmoothingEnabled = s < 16;
+      c.ctx.drawImage(sheet, (i % cols) * 16, Math.floor(i / cols) * 16, 16, 16, 0, 0, s, s);
+      for (let w = s; w < s * 32; w *= 2) c.ctx.drawImage(c.cv, 0, 0, w, s, w, 0, w, s);
+    }
+    return c.cv;
+  }
+  return {ms: raw.ms, clock: raw.clock, slot, frame, changed, strip};
+}
+
 export function makeEngine(cfg) {
   const DATA = new URL(`../../../data/${cfg.id}/`, import.meta.url);
   let loading = null, meta = null;
@@ -48,6 +166,7 @@ export function makeEngine(cfg) {
     }
     d.moonstones = !cfg.moonstones ? [] : Array.from({length: 8}, (_, i) => { const o = OL.state + 0x2A + i * 6; return {x: u16(objlist, o), y: u16(objlist, o + 2), z: u16(objlist, o + 4)}; }).filter(m => m.x || m.y);
     d.cache = {};
+    if (d.anim) d.anim = animator(d.anim, d.pal);
     return d;
   })();
 
@@ -159,22 +278,62 @@ export function makeEngine(cfg) {
     const drawn = (list, off) => list.filter(e => !(e.r.status & INVISIBLE) && (!cfg.hidden.includes(e.r.type)) && !off.has('objects'));
     const order = list => [...list.filter(e => d.tileFlag2[e.tile] & BACKGROUND), ...list.filter(e => !(d.tileFlag2[e.tile] & BACKGROUND))];
 
-    function draw(cv, x0, y0, span, off) {
+    // Animation: each canvas remembers the squares holding a tile that can change and the tick it shows; a tick
+    // repaints only those squares whose tiles look different now (ground, objects and people of the square).
+    const A = d.anim, drawnAt = new WeakMap();
+    const clockFrame = A?.clock ? A.clock.first + hour % 12 : 0;
+    const shown = t => A?.clock && t === A.clock.tile ? clockFrame : t;
+    function draw(cv, x0, y0, span, off, tick = 0) {
       const ctx = cv.getContext('2d'), scale = 256 / span;
       const xa = Math.max(0, Math.floor(x0)), ya = Math.max(0, Math.floor(y0)), xb = Math.min(W, Math.ceil(x0 + span)), yb = Math.min(W, Math.ceil(y0 + span));
       if (xa >= xb || ya >= yb) return;
-      if (scale >= 4) {
+      const key = `${x0},${y0},${span},${[...off].sort()}`, was = drawnAt.get(cv);
+      if (tick && was && was.key === key) {
+        if (scale < 8 || !A) return;   // at 4 pixels a square or less nothing moves (a tick would cost too much)
+        if (was.tick === tick) return;
+        A.frame(tick);
+        const ch = A.changed(was.tick, tick), slot = A.slot;
         ctx.imageSmoothingEnabled = scale < 16;
-        const blit = (t, x, y) => ctx.drawImage(sheet, (t % 32) * 16, (t >> 5) * 16, 16, 16, (x - x0) * scale, (y - y0) * scale, scale, scale);
-        for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) blit(gr[y * W + x], x, y);
-        for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
-          const list = at.get(y * W + x);
-          if (list) for (const e of order(drawn(list, off))) blit(e.tile, x, y);
-          const pl = !off.has('people') && peopleAt.get(y * W + x);
-          if (pl) for (const e of pl) blit(e.tile, x, y);
+        for (const s of was.squares) {
+          let hit = false;
+          for (const t of s.t) if (ch[t]) { hit = true; break; }
+          if (!hit) continue;
+          ctx.clearRect(s.px, s.py, scale * s.n, scale);
+          if (s.t.length === 1) { for (let k = 0; k < s.n; k += 32) { const w = Math.min(32, s.n - k) * scale; ctx.drawImage(A.strip(slot[s.t[0]], scale), 0, 0, w, scale, s.px + k * scale, s.py, w, scale); } continue; }
+          for (const t of s.t) { const i = slot[t]; if (i >= 0) ctx.drawImage(A.strip(i, scale), 0, 0, scale, scale, s.px, s.py, scale, scale); else ctx.drawImage(sheet, (t % 32) * 16, (t >> 5) * 16, 16, 16, s.px, s.py, scale, scale); }
         }
+        was.tick = tick;
         return;
       }
+      if (scale < 8) tick = 0;
+      if (scale >= 4) {
+        ctx.imageSmoothingEnabled = scale < 16;
+        if (tick && A) A.frame(tick);
+        const slot = A && tick ? A.slot : null, squares = [];
+        const blit = (t, x, y) => {
+          const i = slot ? slot[t] : -1;
+          if (i >= 0) ctx.drawImage(A.strip(i, scale), 0, 0, scale, scale, (x - x0) * scale, (y - y0) * scale, scale, scale);
+          else ctx.drawImage(sheet, (t % 32) * 16, (t >> 5) * 16, 16, 16, (x - x0) * scale, (y - y0) * scale, scale, scale);
+        };
+        for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) blit(gr[y * W + x], x, y);
+        for (let y = ya; y < yb; y++) {
+          let run = null;   // squares of one changing ground tile and nothing else, side by side: one fillRect a tick
+          for (let x = xa; x < xb; x++) {
+            const k = y * W + x, list = at.get(k), pl = !off.has('people') && peopleAt.get(k), tiles = [gr[k]];
+            if (list) for (const e of order(drawn(list, off))) { const t = shown(e.tile); blit(t, x, y); tiles.push(t); }
+            if (pl) for (const e of pl) { blit(e.tile, x, y); tiles.push(e.tile); }
+            if (!A || scale < 8 || !tiles.some(t => A.slot[t] >= 0)) { run = null; continue; }
+            const px = (x - x0) * scale, py = (y - y0) * scale;
+            if (tiles.length === 1 && run && run.t[0] === tiles[0]) { run.n++; continue; }
+            const s = {px, py, n: 1, t: tiles};
+            squares.push(s);
+            run = tiles.length === 1 ? s : null;
+          }
+        }
+        drawnAt.set(cv, {key, tick, squares});
+        return;
+      }
+      drawnAt.set(cv, {key, tick, squares: []});
       // far out: each pixel takes the colour of the square under it (the top object's if it covers most of the square)
       const img = ctx.createImageData(256, 256), px = img.data;
       for (let py = 0; py < 256; py++) {
@@ -266,6 +425,7 @@ export function makeEngine(cfg) {
         'people their day and conversation'].filter(Boolean).join(', ')}.</p>`;
     return {
       title: cfg.levels[z], subtitle: `${cfg.title} · ${hh(hour)}`, width: W, height: W, native: 16, wrap: true, draw, cell, features, info,
+      animate: A ? {ms: A.ms} : undefined,
       coords: cfg.coords && cfg.coords(z) ? (x, y) => cfg.coords(z)(x, y) : null,
       svg: svgDoc(W, W, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(W, W))),
       layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, '#8cc6e0'))},
