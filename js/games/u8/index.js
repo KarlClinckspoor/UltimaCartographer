@@ -8,6 +8,10 @@ const HINT = 'run u8edit --export-web data/u8 (docs/u8-export.md)';
 const NONE = 0xFFFFFFFF, BIN = 512;
 const SOURCES = ['fixed', 'movable', 'glob', 'npc'];
 const C = {out: '#f2b33d', in: '#5ec8e8', node: '#c9a45c', usecode: '#c78bd8'};
+const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+// what the export calls a kind of item, in plain words
+const KIND = {npc: 'person', glob: 'scenery group'};
+const EGG = {teleport: 'teleporter', usecode: 'hidden trigger', monster: 'hidden spawn point'};
 
 let meta = null, loading = null;
 const load = () => loading ||= (async () => {
@@ -33,9 +37,9 @@ const NAMES = {3: 'Docks', 4: 'West farmland', 5: 'East Tenebrae to the graveyar
   12: 'Daemon’s Crag', 14: 'Obsidian Fortress', 15: 'Slayer quest', 16: 'Carthax Lake (before)', 21: 'Stone Cove', 24: 'Lava river (before)', 25: 'Lava river (after)',
   26: 'Carthax Lake (after)', 28: 'Carthax dam', 31: 'Hall of the Mountain King', 37: 'Argentrock Isle', 39: 'West Tenebrae', 40: 'Central Tenebrae', 41: 'East Tenebrae',
   43: 'Ethereal Realm (centre)', 44: 'Ethereal Realm (Pyros)', 45: 'Ethereal Realm (Hydros)', 46: 'Ethereal Realm (Stratos)', 47: 'Ethereal Realm (Lithos)',
-  49: 'Catacombs hub', 50: 'Upper catacombs', 51: 'Catacombs gauntlet', 54: 'Zealans', 57: 'Conventicle of the Dead', 62: 'Ancient Necromancers', 63: 'Cozy home'};
+  49: 'Catacombs hub', 50: 'Upper catacombs', 51: 'Catacombs gauntlet', 54: 'Zealans', 57: 'Conventicle of the Dead', 62: 'Ancient Necromancers', 63: 'Cosy home'};
 const named = id => !!(meta?.node.get(id)?.name || NAMES[id]);
-const mapName = id => id === -1 ? 'Usecode (any map)' : meta?.node.get(id)?.name || NAMES[id] || `Map ${id}`;
+const mapName = id => id === -1 ? 'Scripted moves (any map)' : meta?.node.get(id)?.name || NAMES[id] || `Map ${id}`;
 const mapTitle = id => { const n = meta?.node.get(id), base = `${mapName(id)} (map ${id})`; return n?.people?.length ? `${base}: ${n.people.slice(0, 3).join(', ')}${n.people.length > 3 ? '…' : ''}` : base; };
 const cap = s => String(s).replace(/^\w/, c => c.toUpperCase());
 
@@ -43,7 +47,9 @@ const cap = s => String(s).replace(/^\w/, c => c.toUpperCase());
 function loadMap(d, id) {
   if (d.maps.has(id)) return d.maps.get(id);
   const p = (async () => {
-    const [buf, info] = await Promise.all([fetch(new URL(`maps/${id}/items.bin`, DATA)).then(r => { if (!r.ok) throw new Error(`data/u8/maps/${id}/items.bin is missing: ${HINT}`); return r.arrayBuffer(); }),
+    const [buf, info] = await Promise.all([fetch(new URL(`maps/${id}/items.bin`, DATA)).then(r => {
+      if (!r.ok) { console.warn(`data/u8/maps/${id}/items.bin is missing: ${HINT}`); throw new Error('Couldn’t load the map data for Ultima VIII. Try reloading the page.'); }
+      return r.arrayBuffer(); }),
       json(new URL(`maps/${id}/info.json`, DATA))]);
     const v = new DataView(buf), n = buf.byteLength / 16, F = d.F, b = d.byId.get(id).bounds;
     const M = {id, n, info, sx: new Int32Array(n), sy: new Int32Array(n), fid: new Uint16Array(n), z: new Uint8Array(n), fl: new Uint8Array(n), ii: new Uint32Array(n),
@@ -117,17 +123,17 @@ function renderGraph(d) {
     const out = d.graph.transitions.filter(t => t.fromMap === best.id), into = d.graph.transitions.filter(t => t.toMap === best.id);
     const uniq = l => [...new Set(l)];
     const links = best.exported ? [{label: `Open ${mapName(best.id)}`, map: `m${best.id}`}] : [];
-    for (const to of uniq(out.map(t => t.toMap))) if (to !== best.id && d.byId.has(to)) links.push({label: `→ ${mapName(to)}`, map: `m${to}`});
+    for (const to of uniq(out.map(t => t.toMap))) if (to !== best.id && d.byId.has(to)) links.push({label: `To ${mapName(to)}`, map: `m${to}`});
     return {title: mapName(best.id), links, box: [pos(best.id)[0] - 30, pos(best.id)[1] - 30, 60, 60],
       body: `${best.items != null ? `<p>${best.items.toLocaleString()} items${best.people?.length ? `; people: ${esc(best.people.join(', '))}` : ''}</p>` : ''}
-        <p class="muted">${out.length} ways out, ${into.length} ways in.</p>`};
+        <p class="muted">${plural(out.length, 'way out', 'ways out')}, ${plural(into.length, 'way in', 'ways in')}.</p>`};
   };
   return {
-    title: 'How the maps connect', subtitle: 'Ultima VIII · u8edit’s Transitions view', width: W, height: H, svg, cell, hover: false,
+    title: 'How the maps connect', subtitle: 'Ultima VIII · Map connections', width: W, height: H, svg, cell, hover: false,
     features: d.graph.maps.map(m => { const [x, y] = pos(m.id); return {name: mapName(m.id), x, y, detail: (m.people || []).join(', ')}; }),
-    info: `<h3>How the maps connect</h3><p>Every map, laid out as in u8edit’s Transitions view, with an arrow for each way from one to another: grey for teleport eggs, purple for usecode that moves the Avatar.</p>
-      <p>Click a map to open it. Bigger circles hold more items; grey ones are unused or unfinished maps.</p>`,
-    layers: [{id: 'edges', name: 'Transitions'}, {id: 'nodes', name: 'Maps'}],
+    info: `<h3>How the maps connect</h3><p>Every map, with an arrow for each way from one to another: grey for teleporters, purple for scripted moves.</p>
+      <p>Click a map for details and a link to open it. Bigger circles hold more items; grey ones are unused or unfinished maps.</p>`,
+    layers: [{id: 'edges', name: 'Connections'}, {id: 'nodes', name: 'Maps'}],
   };
 }
 
@@ -206,7 +212,7 @@ async function renderMap(d, id, params) {
     if (e.contents?.length) bits.push(`<p class="muted">Holds:</p><ul>${e.contents.map(c => `<li>${esc(typeof c === 'string' ? c : JSON.stringify(c))}</li>`).join('')}</ul>`);
     if (e.npcStats && !e.desc) { const s = e.npcStats; bits.push(`<p>Strength ${s.str}, dexterity ${s.dex}, intelligence ${s.int}, hit points ${s.hp}${s.mana ? `, mana ${s.mana}` : ''}</p>`); }
     if (e.npcStats?.dead) bits.push('<p>Dead.</p>');
-    bits.push(`<p class="muted">${esc(cap(e.source === 'npc' ? 'person' : e.source || ''))}${e.class ? ` · ${esc(e.class)}` : ''} · shape ${e.shape}, frame ${e.frame}${e.quality ? ` · quality ${e.quality}` : ''} · world ${e.x}, ${e.y}, height ${e.z}${e.z >= roof ? ' (above the roof cut)' : ''}</p>`);
+    bits.push(`<p class="muted">${esc(cap(KIND[e.source] || e.source || ''))}${e.class ? ` · ${esc(e.class)}` : ''} · at ${e.x}, ${e.y}, height ${e.z}${e.z >= roof ? ' (above the height cutoff)' : ''}</p>`);
     return bits.join('');
   };
   const cell = (x, y) => {
@@ -220,7 +226,7 @@ async function renderMap(d, id, params) {
       const from = d.graph.transitions.filter(u => u.toMap === id && u.sx === t.sx && u.sy === t.sy);
       const e = i != null ? info[M.ii[i]] : null;
       return {title: e ? cap(e.name) : 'Arrival point', box: [t.sx - b.minX - R, t.sy - b.minY - R, 2 * R, 2 * R],
-        body: `${e ? infoHtml(e) : ''}<p>Arrive here from: ${esc([...new Set(from.map(u => mapName(u.fromMap)))].join(', '))}.</p>`,
+        body: `${e ? infoHtml(e) : ''}<p>Arrive here from ${esc([...new Set(from.map(u => mapName(u.fromMap)))].join(', '))}.</p>`,
         links: [...new Set(from.map(u => u.fromMap))].filter(m => d.byId.has(m) && m !== id).map(m => ({label: `Back to ${mapName(m)}`, map: `m${m}`}))};
     }
     if (hit == null) {
@@ -244,11 +250,11 @@ async function renderMap(d, id, params) {
     const links = (out.get(ii) || []).map(linkFor).filter(Boolean);
     // shapes.json falls back on usecode class names; the shared ones (generic, quality, container) name nothing
     const shapeName = /^(generic|quality|container)$/.test(d.shapes[F.shape[f]] || '') ? null : d.shapes[F.shape[f]];
-    const title = cap(e?.name || shapeName || `shape ${F.shape[f]}`);
-    const kinds = ['fixed', 'movable', 'glob', 'person'];
-    const body = e ? infoHtml(e) : `<p class="muted">${cap(kinds[(M.fl[i] >> 1) & 3])} · shape ${F.shape[f]} · height ${M.z[i]}${M.fl[i] & 8 ? ' · not drawn in the game' : ''}</p>`;
+    const title = cap(e?.name || shapeName || 'Unnamed object');
+    const kinds = ['fixed', 'movable', 'scenery group', 'person'];
+    const body = e ? infoHtml(e) : `<p class="muted">${cap(kinds[(M.fl[i] >> 1) & 3])} · height ${M.z[i]}${M.fl[i] & 8 ? ' · not drawn in the game' : ''}</p>`;
     const usecode = (out.get(ii) || []).filter(t => t.kind !== 'teleportEgg');
-    return {title, body: body + (usecode.length ? `<p>Its usecode (${esc(usecode[0].class || '')}) moves the Avatar.</p>` : ''), links,
+    return {title, body: body + (usecode.length ? '<p>Using it moves the Avatar elsewhere.</p>' : ''), links,
       box: [M.sx[i] + F.left[f] - b.minX, M.sy[i] + F.top[f] - b.minY, F.w[f], F.h[f]]};
   };
 
@@ -256,18 +262,17 @@ async function renderMap(d, id, params) {
   const features = [];
   for (let k = 0; k < info.length; k++) {
     const e = info[k], p_ = e.egg ? posOf(k) : e.npc != null ? solidOf(k) : midOf(k); if (!p_ || !e.name) continue;
-    features.push({name: cap(e.name), x: p_[0], y: p_[1], detail: e.npc != null ? 'person' : e.egg ? `${e.egg.kind} egg` : e.class || ''});
+    features.push({name: cap(e.name), x: p_[0], y: p_[1], detail: e.npc != null ? 'person' : e.egg ? EGG[e.egg.kind] || 'hidden trigger' : e.class || ''});
   }
   const ln = d.node.get(id);
   return {
-    title: mapName(id), subtitle: `Ultima VIII${roof < 255 ? ` · roof cut at height ${roof}` : ''}`, width: W, height: H, native: 1, draw, cell, svg, features, hover: false,
+    title: mapName(id), subtitle: `Ultima VIII${roof < 255 ? ` · height cutoff ${roof}` : ''}`, width: W, height: H, native: 1, draw, cell, svg, features, hover: false,
     info: `<h3>${esc(mapName(id))}</h3>
-      <p>${M.n.toLocaleString()} items as a new game starts, ${d.byId.get(id).drawn.toLocaleString()} of them drawn, in the game’s own order (baked by u8edit).${ln?.people?.length ? ` People: ${esc(ln.people.join(', '))}.` : ''}</p>
-      <p>Amber dots start a teleport or a usecode move: click one to follow it. Blue rings are where they arrive. Turn on “Eggs and triggers” to see what the game never draws.</p>
-      <p class="muted">Roof cut: items at that height or above are hidden unless always drawn, as u8edit does it; 255 shows everything.</p>`,
+      <p>${M.n.toLocaleString()} items as they are at the start of a new game (${d.byId.get(id).drawn.toLocaleString()} of them visible), drawn in the game’s own order.${ln?.people?.length ? ` People: ${esc(ln.people.join(', '))}.` : ''}</p>
+      <p>Amber dots are ways out (teleporters and scripted moves): click one to follow it. Blue rings are where they arrive. Turn on “Hidden triggers” to see what the game never draws.</p>`,
     layers: [
-      {id: 'fixed', name: 'Fixed items'}, {id: 'movable', name: 'Movable items'}, {id: 'glob', name: 'Globs'}, {id: 'npc', name: 'People and creatures'},
-      {id: 'hidden', name: 'Eggs and triggers (not drawn in the game)', on: false},
+      {id: 'fixed', name: 'Fixed items'}, {id: 'movable', name: 'Movable items'}, {id: 'glob', name: 'Scenery groups'}, {id: 'npc', name: 'People and creatures'},
+      {id: 'hidden', name: 'Hidden triggers', on: false},
       {id: 'leave', name: 'Ways out', swatch: swatch(`<circle cx=".5" cy=".5" r=".3" fill="${C.out}" stroke="#111" stroke-width=".08"/>`)},
       {id: 'arrive', name: 'Arrivals', swatch: swatch(`<circle cx=".5" cy=".5" r=".3" fill="none" stroke="${C.in}" stroke-width=".12"/>`)},
     ],
@@ -279,8 +284,8 @@ let lastOff = new Set();
 const currentOff = () => lastOff;
 
 export default {
-  id: 'u8', title: 'Ultima VIII', version: 'PC version, as a new game starts. Baked by u8edit from the game files.',
-  params: [{key: 'roof', label: 'Roof cut (height)', def: 255, min: 0, max: 255, help: 'Items at this height or higher are hidden unless the game always draws them: lower it to look inside buildings. 255 shows everything.'}],
+  id: 'u8', title: 'Ultima VIII', version: 'PC version. Maps, objects and people as they are at the start of a new game.',
+  params: [{key: 'roof', label: 'Height cutoff', def: 255, min: 0, max: 255, help: 'Hides items at this height or above (except ones the game always draws). Lower it to see inside buildings; 255 shows everything.'}],
   transient: [], defaultMap: 'm3',
   maps() {
     const list = [{id: 'graph', name: 'How the maps connect'}];
@@ -288,14 +293,14 @@ export default {
     // maps with no name are unused or unfinished: kept, but in their own list after the rest
     const used = meta.man.maps.filter(m => named(m.id)), unused = meta.man.maps.filter(m => !named(m.id));
     for (const m of used.sort((a, b) => mapName(a.id).localeCompare(mapName(b.id)))) list.push({id: `m${m.id}`, name: mapName(m.id), title: mapTitle(m.id), group: 'Maps'});
-    for (const m of unused) list.push({id: `m${m.id}`, name: String(m.id), title: mapTitle(m.id), group: 'Unused and unfinished'});
+    for (const m of unused) list.push({id: `m${m.id}`, name: `Map ${m.id}`, title: mapTitle(m.id), group: 'Unused and unfinished'});
     return list;
   },
   async render(mapId, params) {
     const d = await load();
     if (mapId === 'graph') return renderGraph(d);
     const id = +String(mapId).replace(/^m/, '');
-    if (!d.byId.has(id)) throw new Error(`no map ${mapId}`);
+    if (!d.byId.has(id)) throw new Error(`There’s no map called ${mapId}.`);
     const v = await renderMap(d, id, params);
     const draw = v.draw;
     v.draw = (cv, x0, y0, span, off) => { lastOff = off; return draw(cv, x0, y0, span, off); };

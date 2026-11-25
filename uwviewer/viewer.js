@@ -5,9 +5,9 @@
 // mirrored; level triangles face the open space and are culled from behind, models are drawn from both sides.
 
 const $ = s => document.querySelector(s);
-const canvas = $('#gl'), gl = canvas.getContext('webgl2', {antialias: true});
-if (!gl) throw new Error('WebGL2 is needed');
 const status = t => { $('#status').textContent = t; };
+const canvas = $('#gl'), gl = canvas.getContext('webgl2', {antialias: true});
+if (!gl) { status('Your browser can’t show 3D here: WebGL 2 is turned off or not supported.'); throw new Error('WebGL2 is needed'); }
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[ch]));
 const cap = s => String(s).replace(/^\w/, c => c.toUpperCase());
 
@@ -36,8 +36,10 @@ function program(vs, fs) {
 }
 let DATA = null;
 const url = n => new URL(n, DATA);
-const fetchBin = async n => { const r = await fetch(url(n)); if (!r.ok) throw new Error(`${n} is missing: run UwEditor.Cli export-web (docs/uw-export.md)`); return r.arrayBuffer(); };
-const fetchJson = async n => { const r = await fetch(url(n)); if (!r.ok) throw new Error(`${n} is missing: run UwEditor.Cli export-web (docs/uw-export.md)`); return r.json(); };
+// a missing file: the visitor gets a plain message, the developer the way to rebuild it
+const missing = n => { console.warn(`${n} is missing: run UwEditor.Cli export-web (docs/uw-export.md)`); throw new Error('Couldn’t load the level data. Try reloading the page.'); };
+const fetchBin = async n => { const r = await fetch(url(n)); if (!r.ok) missing(n); return r.arrayBuffer(); };
+const fetchJson = async n => { const r = await fetch(url(n)); if (!r.ok) missing(n); return r.json(); };
 const loadImage = async n => { const r = await fetch(url(n)); return createImageBitmap(await r.blob(), {premultiplyAlpha: 'none', colorSpaceConversion: 'none'}); };
 // the texture strips as one TEXTURE_2D_ARRAY: perFile layers of size x size a file, stacked top to bottom
 async function textureArray(T) {
@@ -149,13 +151,13 @@ async function loadGame(game) {
   const groups = new Map();
   for (const l of S.man.levels) { const k = l.realm || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l); }
   $('#level').innerHTML = [...groups].map(([k, ls]) => (k ? `<optgroup label="${esc(k)}">` : '') + ls.map(l => `<option value="${l.id}">${esc(l.name.replace(/ \(\d+\)$/, ''))}</option>`).join('') + (k ? '</optgroup>' : '')).join('');
-  $('#light').innerHTML = `<option value="-1">Full bright</option>` + S.light.names.map((n, i) => `<option value="${i}">${esc(n.replace(/^\d+: /, '')).replace(/^\w/, c => c.toUpperCase())}</option>`).join('');
+  $('#light').innerHTML = `<option value="-1">Fully lit</option>` + S.light.names.map((n, i) => `<option value="${i}">${esc(n.replace(/^\d+: /, '')).replace(/^\w/, c => c.toUpperCase())}</option>`).join('');
   $('#light').value = '6';
   $('#game').value = game;
 }
 
 async function loadLevel(id, place) {
-  status(`Loading ${S.man.levels.find(l => l.id === id)?.name || 'level ' + id}…`);
+  status(`Loading ${(S.man.levels.find(l => l.id === id)?.name || 'level ' + id).replace(/ \(\d+\)$/, '')}…`);
   const p = `levels/${id}/`;
   const [mesh, models, sprites, tiles, objects] = await Promise.all([fetchBin(p + 'mesh.bin'), fetchBin(p + 'models.bin'), fetchBin(p + 'sprites.bin'), fetchBin(p + 'tiles.bin'), fetchJson(p + 'objects.json')]);
   const L = S.man.levels.find(l => l.id === id);
@@ -187,7 +189,7 @@ async function loadLevel(id, place) {
   else if (L.start) Object.assign(c, {x: L.start.x, z: L.start.z, y: L.start.y + 0.75, yaw: (L.start.heading || 0) * Math.PI / 180, pitch: 0});
   else { const t = firstOpen(lv); Object.assign(c, {x: t[0] + 0.5, z: t[1] + 0.5, y: floorAt(t[0] + .5, t[1] + .5) + 0.75, yaw: 0, pitch: 0}); }
   if (place && place.y == null) c.y = floorAt(c.x, c.z) + 0.75;
-  status(`${L.name.replace(/ \(\d+\)$/, '')}: ${L.triangles.toLocaleString()} triangles, ${L.objects} objects`);
+  status(`${L.name.replace(/ \(\d+\)$/, '')}: ${L.objects} objects`);
   writeHash();
 }
 const tileAt = (lv, tx, ty) => { const o = (ty * 64 + tx) * 8; return {type: lv.tiles[o], floor: lv.tiles[o + 1], flags: lv.tiles[o + 6]}; };
@@ -273,7 +275,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => S.keys.delete(e.code));
 // touch screens: the Walk button moves forward until pressed again; dragging turns. The panel folds away.
 $('#walk').onclick = () => { S.walk = !S.walk; $('#walk').classList.toggle('on', S.walk); $('#walk').textContent = S.walk ? '■ Stop' : '▲ Walk'; };
-$('#fold').onclick = () => { const f = $('#panel').classList.toggle('folded'); $('#fold').textContent = f ? '+' : '–'; };
+$('#fold').onclick = () => { const f = $('#panel').classList.toggle('folded'); $('#fold').textContent = f ? '+' : '–'; $('#fold').title = f ? 'Show the panel' : 'Hide the panel'; $('#fold').setAttribute('aria-label', $('#fold').title); };
 if (matchMedia('(max-width: 600px)').matches) $('#fold').onclick();   // a phone: start with the view, not the panel
 
 addEventListener('blur', () => S.keys.clear());
@@ -351,7 +353,7 @@ function pick(px, py) {
     const bits = [];
     if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}${o.critter.talksAs ? `; talks as ${esc(o.critter.talksAs)}` : ''}`);
     if (o.desc) bits.push(esc(cap(o.desc)));
-    if (o.lock) bits.push(`${o.lock.locked ? 'Locked' : 'Unlocked'}${o.lock.key ? `; opened by ${esc(o.lock.key)}` : ''}`);
+    if (o.lock) bits.push(`${o.lock.locked ? 'Locked' : 'Unlocked'}${o.lock.key ? `; opens with ${esc(o.lock.key)}` : ''}`);
     if (o.contents?.length) bits.push(`Holds ${o.contents.map(flat).join(', ')}`);
     if (o.text) bits.push(`“${esc(o.text.trim())}”`);
     const k = ends(o.link); if (k?.kind === 'teleport') bits.push(`Takes you to ${esc(k.level === lv.id ? 'another place on this level' : levelName(k.level))} (${k.x}, ${k.y}).`);
@@ -360,11 +362,11 @@ function pick(px, py) {
   };
   const teles = list.map(o => ends(o.link)).filter(k => k?.kind === 'teleport');
   box.style.display = 'block';
-  box.innerHTML = `<h2>${esc(cap(focus ? focus.name : TYPES[t.type] || 'tile'))}</h2>
-    <p class="muted">Tile ${tx}, ${ty} · ${esc(TYPES[t.type] || '')}${t.type ? `, floor height ${t.floor}` : ''}${best.kind === 1 ? ' · a wall' : best.kind === 2 ? ' · the ceiling' : ''}</p>
+  box.innerHTML = `<h2>${esc(cap(focus ? focus.name : TYPES[t.type] || 'square'))}</h2>
+    <p class="muted">Square ${tx}, ${ty} · ${esc(TYPES[t.type] || '')}${t.type ? `, floor height ${t.floor}` : ''}${best.kind === 1 ? ' · wall' : best.kind === 2 ? ' · ceiling' : ''}</p>
     ${list.length ? `<ul>${list.slice(0, 12).map(item).join('')}</ul>` : ''}
-    ${teles.map((k, i) => `<button data-go="${i}">Go to ${esc(k.level === lv.id ? 'where it leads' : levelName(k.level))}</button>`).join('')}
-    <p><a href="../#${S.game}/L${lv.id}?view=${tx + .5},${63 - ty + .5},5">On the map</a></p><button id="close">Close</button>`;
+    ${teles.map((k, i) => `<button data-go="${i}">${k.level === lv.id ? 'Go there' : `Go to ${esc(levelName(k.level))}`}</button>`).join('')}
+    <p><a href="../#${S.game}/L${lv.id}?view=${tx + .5},${63 - ty + .5},5">Show on the map</a></p><button id="close">Close</button>`;
   $('#close').onclick = () => { box.style.display = 'none'; };
   for (const b of box.querySelectorAll('[data-go]')) b.onclick = () => {
     const k = teles[+b.dataset.go]; box.style.display = 'none';

@@ -8,7 +8,7 @@ const RY = [0x1F3, 0x106, 0x18B, 0x166, 0x373, 0x3A6, 0x02D, 0x160, 0x02D, 0x3AE
 const RZ = [0, 0, 0, 0, 0, 0, 5, 0, 5, 0, 0, 0, 0, 0, 0, 1, 5, 5, 0, 0, 0, 0, 0, 0, 0];
 // npctrack.c DungeonNames: what Shamino calls the place a hole or mine shaft of quality q leads to.
 const DUNGEONS = ['Deceit', 'Despise', 'Destard', 'Wrong', 'Covetous', 'Shame', 'Hythloth', 'GSA', 'Control', 'Passion', 'Diligence',
-  'Tomb of Kings', 'Ant Mound', 'Swamp Cave', 'Spider Cave', 'Cyclops Cave', 'Heftimus Cave', "Heroes' Hole", 'Pirate Cave', "Buccaneer's Cave"];
+  'Tomb of Kings', 'Ant Mound', 'Swamp Cave', 'Spider Cave', 'Cyclops Cave', 'Heftimus Cave', 'Heroes’ Hole', 'Pirate Cave', 'Buccaneer’s Cave'];
 
 // The sextant and the Locate spell (spell.c SPELL_PrintLocation), on the surface and in the gargoyles' land only:
 // degrees from (304, 360), 8 squares a degree; the gargoyles' land counts 4 for each of its squares.
@@ -20,9 +20,9 @@ export const sextant = z => z === 0 || z === 5 ? (x, y) => {
 
 export default makeEngine({
   coords: sextant,
-  id: 'u6', title: 'Ultima VI', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
+  id: 'u6', title: 'Ultima VI', version: 'PC/GOG version. Maps, objects and people as they are at the start of a new game.',
   startHour: 12, moonstones: true,
-  levels: ['Britannia', 'Underground, level 1', 'Underground, level 2', 'Underground, level 3', 'Underground, level 4', 'The Gargoyle lands'],
+  levels: ['Britannia', 'Underground, level 1', 'Underground, level 2', 'Underground, level 3', 'Underground, level 4', 'Gargoyle lands'],
   redGates: RX.map((x, i) => x || RY[i] ? [x, RY[i], RZ[i]] : null),
   dungeonNames: DUNGEONS,
   dungeonName: q => q < 8 ? `Dungeon ${DUNGEONS[q - 1]}` : q === 8 ? 'The Great Stygian Abyss' : q <= 11 ? `Shrine of ${DUNGEONS[q - 1]}` : DUNGEONS[q - 1],

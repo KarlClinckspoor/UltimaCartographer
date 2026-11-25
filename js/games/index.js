@@ -31,5 +31,5 @@ export const GAMES = [
   uw2,
   u7si,
   u8,
-  {id: 'u9', title: 'Ultima IX: Ascension (3D)', href: 'u9viewer/'},
+  {id: 'u9', title: 'Ultima IX: Ascension (opens 3D view)', href: 'u9viewer/'},
 ];

@@ -9,8 +9,8 @@ const SHAPES = ['Water', 'Grass', 'Brush', 'Forest', 'Mountains', 'Dungeon', 'To
   'Orc', 'Skeleton', 'Giant', 'Daemon', 'Pincher', 'Dragon', 'Balron', 'Exodus', 'Force field', 'Lava', 'Moon gate', 'Wall', 'Void', 'Wall'];
 const shapeName = s => s < SHAPES.length ? SHAPES[s] : s <= 57 ? 'Lettering' : {58: 'Snake', 59: 'Snake', 60: 'Magic', 61: 'Fire', 62: 'Shrine', 63: 'Ranger'}[s] || `Shape ${s}`;
 const TERRAIN_NOTE = {
-  0: 'Only a frigate sails it, and only with the wind.', 4: 'Impassable.', 32: 'Stops the party and costs the first member without the Mark of Force 99 hit points.',
-  33: 'Costs 50 hit points to everyone without the Mark of Fire; the party passes.', 12: 'Swallows a frigate and carries the party to Ambrosia.',
+  0: 'Only a frigate sails it, and only with the wind.', 4: 'Impassable.', 32: 'Stops the party; the first member without the Mark of Force loses 99 hit points.',
+  33: 'The party can cross, but everyone without the Mark of Fire loses 50 hit points.', 12: 'Swallows a frigate and carries the party to Ambrosia.',
 };
 
 // Townes and castles: file, name, entrance on Sosaria, where you arrive inside.
@@ -26,10 +26,10 @@ const GATES = [[8, 8], [57, 46], [15, 27], [36, 58], [15, 29], [12, 55], [31, 31
 const SHRINES = [[4, 36, 'Strength'], [45, 52, 'Dexterity'], [6, 6, 'Intelligence'], [55, 27, 'Wisdom']];
 const SERVICES = ['Pub', 'Grocer', 'Temple', 'Weapons', 'Armour', 'Guild', 'Radrion the oracle', 'Equine Emporium'];
 const SERVICE_NOTE = {
-  Pub: 'Pay 7 gold or more for a tip; the tens digit picks it.', Grocer: '1 gold a ration.', Temple: 'Cure 100, heal 200, resurrect 500, recall from ashes 900.',
+  Pub: 'Pay 7 gold or more for a tip; the tens digit of what you pay picks which.', Grocer: '1 gold a ration.', Temple: 'Cure 100, heal 200, resurrect 500, recall from ashes 900.',
   Weapons: 'Dagger to two-handed sword; selling pays the full price.', Armour: 'Cloth to plate; selling pays the full price.',
-  Guild: 'Gems 75, keys 50, powders 90, torches 6.', 'Radrion the oracle': 'Pay 0-900 gold for one verse of a rhyme about marks, shrines, cards and the Lord of Time.',
-  'Equine Emporium': '200 gold a party member: the party rides a horse.',
+  Guild: 'Gems 75, keys 50, powders 90, torches 6.', 'Radrion the oracle': 'Pay 0–900 gold for one verse of a rhyme about marks, shrines, cards and the Lord of Time.',
+  'Equine Emporium': '200 gold per party member; the party then rides horses.',
 };
 const MOVES = ['Stands still.', 'Wanders.', 'Comes towards the party (never attacks).', 'Hostile: chases the party and attacks.'];
 const EVENTS = {1: 'Time vision', 2: 'Fountain', 3: 'Strange wind', 4: 'Trap', 5: 'Red hot rod', 6: 'Gremlins', 8: 'Misty writing'};
@@ -79,13 +79,13 @@ function renderWorld(d, key) {
       : above.has(key) ? label(x + .5, y - .2, name, .8, color) : label(x + 1.08, y + .78, name, .8, color, 'start');
     for (const [file, name, x, y] of TOWNS) { put(file, name, x, y, '#f4efe0'); features.push({name, x, y}); }
     for (const [file, name, x, y] of DUNGEONS) { put(file, name, x, y, '#ffb0a0'); features.push({name: `Dungeon: ${name}`, x, y}); }
-    GATES.forEach(([x, y], k) => { gates += ring(x, y, C.gate, '', .14) + label(x + .5, y - .2, `phase ${k}`, .7, C.gate); features.push({name: `Moon gate, phase ${k}`, x, y}); });
+    GATES.forEach(([x, y], k) => { gates += ring(x, y, C.gate, '', .14) + label(x + .5, y - .2, `phase ${k}`, .7, C.gate); features.push({name: `Moon gate (phase ${k})`, x, y}); });
     marks += ring(5, 58, C.talk, '.18 .1');
     features.push({name: 'Whirlpool (start)', x: 5, y: 58});
   } else {
     for (const [x, y, attr] of SHRINES) { names += label(x + 1.08, y + .78, `Shrine of ${attr}`, .8, '#bff5c9', 'start'); features.push({name: `Shrine of ${attr}`, x, y}); }
     marks += ring(32, 54, C.start, '.18 .1') + ring(32, 58, C.talk, '.18 .1');
-    features.push({name: 'Where the whirlpool leaves you', x: 32, y: 54}, {name: 'Whirlpool home', x: 32, y: 58});
+    features.push({name: 'Where the whirlpool leaves you', x: 32, y: 54}, {name: 'Whirlpool (back to Sosaria)', x: 32, y: 58});
   }
   const svg = svgDoc(64, 64, g('names', names) + (sosaria ? g('gates', gates) : '') + g('marks', marks) + g('grid', gridLines(64, 64)));
 
@@ -95,10 +95,10 @@ function renderWorld(d, key) {
       const t = TOWNS.find(r => r[2] === x && r[3] === y), dn = DUNGEONS.find(r => r[2] === x && r[3] === y);
       if (t) {
         const dawn = t[0] === 'DAWN';
-        return {title: t[1], body: (dawn ? p('Dawn is only here while both moons line up: the cell turns into a towne when both reach phase 7 and back into forest when both reach 0. Its shops alone sell the +2 and +4 goods.') : '') +
+        return {title: t[1], body: (dawn ? p('Dawn is only here while both moons line up: the square turns into a towne when both reach phase 7 and back into forest when both reach 0. Its shops alone sell the +2 and +4 goods.') : '') +
           p(t[4] === 'castle' ? 'You enter at the south edge.' : 'You enter at the west edge.'), links: [{label: 'Enter', map: t[0], focus: t[4] === 'castle' ? [32, 62] : [1, 32]}]};
       }
-      if (dn) return {title: `Dungeon: ${dn[1]}`, body: p('Eight levels, fixed in the game file. You arrive on level 1 at (1, 1), facing east, in the dark.'), links: [{label: 'Enter level 1', map: `${dn[0]}-1`, focus: [1, 1]}]};
+      if (dn) return {title: `Dungeon: ${dn[1]}`, body: p('Eight levels, the same in every game. You arrive on level 1 at (1, 1), facing east, in the dark.'), links: [{label: 'Enter level 1', map: `${dn[0]}-1`, focus: [1, 1]}]};
       const k = GATES.findIndex(([a, b]) => a === x && b === y);
       if (k >= 0) return {title: `Moon gate (phase ${k})`, body: p(`Stands here while the first moon is in phase ${k}. Stepping in takes the party to the gate of the second moon’s phase.`)};
       if (x === 5 && y === 58) return {title: 'The whirlpool', body: p('Where it starts. It wanders the sea, destroys frigates and carries a party it swallows to Ambrosia.')};
@@ -106,7 +106,7 @@ function renderWorld(d, key) {
       const sh = SHRINES.find(r => r[0] === x && r[1] === y);
       if (sh) return {title: `Shrine of ${sh[2]}`, body: p(`E)nter and offer gold: each hundred raises ${sh[2]} by one point, up to the race’s maximum.`, 'Also where the four cards come from.')};
       if (x === 32 && y === 54) return {title: 'Arrival', body: p('The whirlpool leaves the party here, on foot.')};
-      if (x === 32 && y === 58) return {title: 'Whirlpool', body: p('The only way back to Sosaria, by frigate. Fighting a pirate ship from land leaves its frigate.')};
+      if (x === 32 && y === 58) return {title: 'Whirlpool', body: p('The only way back to Sosaria, by frigate. Beat a pirate ship from the shore and it leaves its frigate behind.')};
     }
     const q = m.people.find(r => r.x === x && r.y === y);
     if (q) return {title: shapeName(q.tile >> 2), body: p(MOVES[q.talk >> 6], 'Back at this spot on every visit.')};
@@ -115,9 +115,9 @@ function renderWorld(d, key) {
 
   const info = sosaria
     ? `<h3>Sosaria</h3><p>Ten townes, two castles and seven dungeons. The map wraps around and is saved with the game.</p>
-      <p>The moon gate on the map is the one of the first moon’s phase; stepping in leads to the gate of the second moon’s phase.</p>
+      <p>The open moon gate follows the first moon’s phase; stepping in leads to the gate of the second moon’s phase.</p>
       <p class="muted">Monsters appear at random as you travel; none are stored in the map.</p>`
-    : `<h3>Ambrosia</h3><p>Reached only through the whirlpool. Four shrines raise attributes for gold. Nothing is saved: the 16 creatures are back every visit, and foes hit 30 harder.</p>
+    : `<h3>Ambrosia</h3><p>Reached only through the whirlpool. Four shrines raise attributes for gold. Nothing is saved: the 16 creatures are back every visit, and foes hit 30 points harder.</p>
       <p class="muted">Mountains ring the whole map; the only way out is the whirlpool, by frigate.</p>`;
   const layers = [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))}];
   if (sosaria) layers.push({id: 'gates', name: 'Moon gates', swatch: swatch(ring(0, 0, C.gate, '', .14))});
@@ -164,13 +164,13 @@ function renderTown(d, key) {
     if (q) {
       const ks = q.tile >> 2, sp = speech(q), shop = ks === 16 ? shopOf(floor, q) : null;
       let body = sp ? `<p>“${esc(sp).replace(/\n/g, ' ')}”</p>` : '';
-      if (shop) body += p(`<b>${shop.service}</b>: Transact from ${shop.from[0]}, ${shop.from[1]}, across the counter. ${SERVICE_NOTE[shop.service]}`);
-      if (ks === 19) body += p('Transact with him: +100 maximum hit points each time, while your experience allows, up to 2550; from 550 on only with the Mark of Kings.');
+      if (shop) body += p(`<b>${shop.service}</b>: Transact across the counter from square ${shop.from[0]}, ${shop.from[1]}. ${SERVICE_NOTE[shop.service]}`);
+      if (ks === 19) body += p('Transact with him: +100 maximum hit points each time, while your experience allows, up to 2550; beyond 550 only with the Mark of Kings.');
       return {title: shop ? `Merchant: ${shop.service}` : shapeName(ks), body: body + p(MOVES[q.talk >> 6])};
     }
     let title = shapeName(s), body = '';
     if (c === 0xB8) [title, body] = ['Locked door', p('Shown as the letter I. Unlock it with a key, standing east or west of it.')];
-    else if (s === 9) body = p('A chest: gold, and maybe a weapon or armour. Back every visit; some are trapped.');
+    else if (s === 9) body = p('A chest: gold, and maybe a weapon or armour. Restocked on every visit; some are trapped.');
     else if (TERRAIN_NOTE[s]) body = p(TERRAIN_NOTE[s]);
     if ((castle && x === 32 && y === 62) || (!castle && x === 1 && y === 32)) body += p('<b>You enter here.</b>');
     return {title, body, links};
@@ -212,12 +212,12 @@ const badge = (x, y, text, color) => `<rect x="${x + .02}" y="${y + .02}" width=
 function eventNote(n, x, msg) {
   switch (n) {
     case 1: return 'The Time Lord: “The one way is Love, Sol, Moons & Death, all else fails.”';
-    case 2: return `Drink: ${['poison', 'healed to full', 'lose 25 hit points', 'poison cured'][x & 3]} (decided by the fountain’s column). Stays.`;
-    case 3: return 'Puts the light out. Stays.';
-    case 4: return 'Only the first member’s dexterity can evade it; otherwise the whole party is hurt. Then gone.';
-    case 5: return `Gives the <b>Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}</b> and costs 50 hit points. Stays.`;
-    case 6: return 'A random member loses 100 food. Then gone.';
-    case 8: return `The level’s message: “${esc(msg)}”. Then gone.`;
+    case 2: return `Drink: ${['poison', 'healed to full', 'lose 25 hit points', 'poison cured'][x & 3]} (decided by the fountain’s column). It stays.`;
+    case 3: return 'Puts the light out. It stays.';
+    case 4: return 'Only the first member’s dexterity can evade it; otherwise the whole party is hurt. Then it’s gone.';
+    case 5: return `Gives the <b>Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}</b> and costs 50 hit points. It stays.`;
+    case 6: return 'A random member loses 100 food. Then it’s gone.';
+    case 8: return `The level’s message: “${esc(msg)}”. Then it’s gone.`;
   }
   return '';
 }
@@ -236,7 +236,7 @@ function renderLevel(d, key, L) {
     if (c === 0xA0) features.push({name: 'Secret door', x, y});
     if (c === 0x40) { parts.marks += badge(x, y, 'C', C.chest); chests++; features.push({name: 'Chest', x, y}); }
     if (c < 0x80 && c & 0x30) features.unshift({name: c === 0x30 ? 'Ladder up and down' : c & 0x10 ? 'Ladder up' : 'Ladder down', x, y});
-    if (c >= 1 && c <= 8 && c !== 7) { parts.marks += badge(x, y, {1: 'T', 2: 'F', 3: 'W', 4: 'X', 5: 'R', 6: 'G', 8: 'M'}[c], C.event); features.push({name: c === 2 ? `Fountain (${['poison', 'heal', 'harm', 'cure'][x & 3]})` : c === 5 ? `Rod: Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}` : EVENTS[c], x, y}); }
+    if (c >= 1 && c <= 8 && c !== 7) { parts.marks += badge(x, y, {1: 'T', 2: 'F', 3: 'W', 4: 'X', 5: 'R', 6: 'G', 8: 'M'}[c], C.event); features.push({name: c === 2 ? `Fountain: ${['poison', 'healing', 'harm', 'cure'][x & 3]}` : c === 5 ? `Red hot rod: Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}` : EVENTS[c], x, y}); }
   }
   const svg = svgDoc(16, 16, g('marks', parts.marks) + g('grid', gridLines(16, 16)) + (L === 1 ? g('start', glyph.start(1, 1)) : ''));
   const id = l => `${key}-${l}`;
@@ -245,7 +245,7 @@ function renderLevel(d, key, L) {
     if (c === 0x80 || (c > 0x80 && c < 0xA0) || (c > 0xA0 && c < 0xC0)) return {title: 'Wall'};
     if (c === 0xA0) return {title: 'Secret door', body: p('Drawn as a wall; walking forward goes through. A gem or the Vieda spell shows it.')};
     if (c >= 0xC0) return {title: 'Door', body: p('Walk in going forward. You can’t turn or back up while standing in it.')};
-    if (c === 0x40) return {title: 'Chest', body: p('Get chest: gold, sometimes a weapon or armour; may be trapped. Back on every visit.')};
+    if (c === 0x40) return {title: 'Chest', body: p('Get chest: gold, sometimes a weapon or armour; may be trapped. Restocked on every visit.')};
     if (c >= 1 && c <= 8 && c !== 7) return {title: c === 2 ? `Fountain: ${['poison', 'healing', 'harm', 'cure'][x & 3]}` : c === 5 ? `Red hot rod: Mark of ${['Force', 'Fire', 'the Snake', 'Kings'][x & 3]}` : EVENTS[c], body: p(eventNote(c, x, m.messages[L - 1]))};
     if (c & 0x30) {
       if (c & 0x10) links.push(L === 1 ? {label: 'Klimb out to Sosaria', map: 'SOSARIA', focus: [dn[2], dn[3]]} : {label: `Klimb to level ${L - 1}`, map: id(L - 1), focus: [x, y]});
@@ -257,9 +257,9 @@ function renderLevel(d, key, L) {
   const kinds = DMON.slice(0, Math.min(L + 1, 7));
   const info = `<h3>${esc(dn[1])}, level ${L}</h3>
     <p>Misty writing: “${esc(m.messages[L - 1])}”</p>
-    <p>${chests} chest${chests === 1 ? '' : 's'}. Encounters: ${((L + 1) / 256 * 100).toFixed(1)}% a turn on a floor square, from ${kinds.join(', ')}; the party’s square becomes a chest before the fight.</p>
-    <p>Drawn as the gem view (Peer at a gem, or Vieda) draws it, signs from the game’s own font; it prints “?” for chests and the special squares, so letters say what each is: C chest, F fountain, R rod, T Time Lord, W wind, X trap, G gremlins, M misty writing.</p>
-    <p class="muted">Fixed in the game file, the same for everyone. Every level wraps at its edges. Light is only for the view: you can move and fight in the dark.</p>`;
+    <p>${chests} chest${chests === 1 ? '' : 's'}. Encounters: ${((L + 1) / 256 * 100).toFixed(1)}% a turn on a floor square, from ${kinds.join(', ')}; after a win, a chest is left on the party’s square.</p>
+    <p>Drawn the way the gem view (Peer at a gem, or the Vieda spell) shows it, in the game’s own font. The gem view shows “?” for chests and special squares, so letters mark what each one is: C chest, F fountain, R rod, T Time Lord, W wind, X trap, G gremlins, M misty writing.</p>
+    <p class="muted">The same for everyone. Every level wraps at its edges. Light is only for the view: you can move and fight in the dark.</p>`;
   return {
     title: `${dn[1]}, level ${L}`, subtitle: 'Dungeon', width: 16, height: 16, wrap: true, native: 16, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [

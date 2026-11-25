@@ -50,6 +50,9 @@ block ES modules over `file://`.)
 | `tools/png.mjs` | The PNG writer the newer extractors share |
 | `tools/` | Extractors and checks that need the game files or DOSBox |
 | `vendor/leaflet` | Leaflet 1.9.4 (BSD-2-Clause, see its LICENSE) |
+| `css/site.css`, `css/viewer.css` | The look: parchment sheets for the maps and the 3D viewers' panels |
+| `img/parchment.png` | The sheets' torn edges, from Ultima Underworld's blank automap (`tools/make-parchment.mjs`) |
+| `fonts/` | The Underworld's own pixel fonts (headings and labels, decoded from its FONTBIG.SYS and FONT5X6P.SYS) and Grenze (text) |
 | `tests/` | Checks |
 
 ## URLs
@@ -270,6 +273,8 @@ Garriott and the people of Origin Systems (Akalabeth by Richard Garriott, publis
 reckoning and Serpent Isle's regions were checked.
 
 **Software.** [Leaflet](https://leafletjs.com/) (BSD-2-Clause, Vladimir Agafonkin and contributors) draws the 2D maps.
+The text face is [Grenze](https://fonts.google.com/specimen/Grenze) by Omnibus-Type (SIL Open Font License 1.1). The
+headings use Ultima Underworld's own fonts and the panels its automap's parchment, both from the game files.
 The 3D viewers follow ideas from [noclip.website](https://noclip.website/) (Jasper St. Pierre and contributors) for drawing
 large worlds smoothly; no code is taken from it.
 

@@ -7,9 +7,9 @@
 
 const DATA = new URL('data/', import.meta.url);
 const $ = s => document.querySelector(s);
-const canvas = $('#gl'), gl = canvas.getContext('webgl2', {antialias: true});
-if (!gl) throw new Error('WebGL2 is needed');
 const status = t => { $('#status').textContent = t; };
+const canvas = $('#gl'), gl = canvas.getContext('webgl2', {antialias: true});
+if (!gl) { status('Your browser can’t show 3D here: WebGL 2 is turned off or not supported.'); throw new Error('WebGL2 is needed'); }
 
 // ---------- small math ----------
 const mat = {
@@ -46,8 +46,10 @@ function program(vs, fs) {
   const u = {}; for (let i = 0, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, a.name); }
   return {p, u};
 }
-const fetchBin = async n => { const r = await fetch(new URL(n, DATA)); if (!r.ok) throw new Error(`${n} is missing: run u9 export-web`); return r.arrayBuffer(); };
-const fetchJson = async n => { const r = await fetch(new URL(n, DATA)); if (!r.ok) throw new Error(`${n} is missing`); return r.json(); };
+// a missing file: the visitor gets a plain message, the developer the way to rebuild it
+const missing = n => { console.warn(`${n} is missing: run u9 export-web`); throw new Error('Couldn’t load the map data. Try reloading the page.'); };
+const fetchBin = async n => { const r = await fetch(new URL(n, DATA)); if (!r.ok) missing(n); return r.arrayBuffer(); };
+const fetchJson = async n => { const r = await fetch(new URL(n, DATA)); if (!r.ok) missing(n); return r.json(); };
 const loadImage = async n => { const r = await fetch(new URL(n, DATA)); return createImageBitmap(await r.blob(), {premultiplyAlpha: 'none', colorSpaceConversion: 'none'}); };
 // a TEXTURE_2D_ARRAY from PNG strips of size x size layers stacked vertically
 const MAX_LAYERS = gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS);
@@ -208,7 +210,7 @@ const S = {manifest: null, terrainTex: null, map: null, models: null, cam: {x: 5
 
 async function loadModels() {
   if (S.models) return S.models;
-  status('Loading models…');
+  status('Loading objects…');
   const [json, bin] = await Promise.all([fetchJson('models.json'), fetchBin('models.bin')]);
   const vb = json.vertexBytes || 32, nv = json.vertexCount;
   // WebGL2 has no base vertex: make every index absolute
@@ -235,8 +237,8 @@ async function loadModels() {
   // model textures: one array per size; modes as a R8UI texture, a row per array
   const arrays = S.manifest.textures.model, tex = [];
   const first = [];
-  for (const a of arrays) { status(`Loading ${a.size} px model textures…`); first.push(tex.length); tex.push(...await textureArrays(a.size, a.count, a.files)); }
-  if (tex.length > 8) throw new Error(`model textures need ${tex.length} texture arrays; the viewer has 8`);
+  for (const a of arrays) { status('Loading object textures…'); first.push(tex.length); tex.push(...await textureArrays(a.size, a.count, a.files)); }
+  if (tex.length > 8) throw new Error(`Too many object textures to show (${tex.length} sets, at most 8).`);
   const w = Math.max(...arrays.map(a => a.count)), modes = new Uint8Array(w * arrays.length);
   for (let i = 0; i < arrays.length; i++) modes.set(new Uint8Array(await fetchBin(arrays[i].modes)), i * w);
   const modeTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, modeTex);
@@ -282,8 +284,8 @@ async function loadMap(id, place) {
   else Object.assign(S.cam, {x: W / 2, z: H / 2, y: Math.max(60, W / 6), yaw: 0, pitch: -0.9});
   $('#map').value = id;
   writeHash();
-  S.summary = `${m.name || 'Map ' + id}: ${W} × ${H} points, ${n.toLocaleString()} objects, ${m.links} map changes`;
-  status(S.models ? S.summary : S.summary + ' · loading models…');
+  S.summary = `${m.name || 'Map ' + id}: ${n.toLocaleString()} objects, ${m.links} ways to other maps`;
+  status(S.models ? S.summary : S.summary + ' · loading objects…');
 }
 
 // ---------- drawing ----------
@@ -406,7 +408,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => S.keys.delete(e.code));
 // touch screens: the Walk button moves forward until pressed again; dragging turns. The panel folds away.
 $('#walk').onclick = () => { S.walk = !S.walk; $('#walk').classList.toggle('on', S.walk); $('#walk').textContent = S.walk ? '■ Stop' : '▲ Walk'; };
-$('#fold').onclick = () => { const f = $('#panel').classList.toggle('folded'); $('#fold').textContent = f ? '+' : '–'; };
+$('#fold').onclick = () => { const f = $('#panel').classList.toggle('folded'); $('#fold').textContent = f ? '+' : '–'; $('#fold').title = f ? 'Show the panel' : 'Hide the panel'; $('#fold').setAttribute('aria-label', $('#fold').title); };
 if (matchMedia('(max-width: 600px)').matches) $('#fold').onclick();   // a phone: start with the view, not the panel
 
 addEventListener('blur', () => S.keys.clear());
@@ -420,7 +422,14 @@ canvas.addEventListener('pointermove', e => {
   drag.x = e.clientX; drag.y = e.clientY; scheduleHash();
 });
 canvas.addEventListener('pointerup', e => { if (drag && !drag.moved) pick(e.clientX, e.clientY); drag = null; });
-canvas.addEventListener('wheel', e => { e.preventDefault(); S.speed = Math.max(2, Math.min(800, S.speed * (e.deltaY < 0 ? 1.25 : 0.8))); status(`Speed ${Math.round(S.speed)} points a second`); }, {passive: false});
+// the speed shows in the status line for a moment, then the map summary comes back
+let speedTimer = 0;
+function showSpeed() {
+  const t = `Speed: ${Math.round(S.speed)} units per second`;
+  status(t); clearTimeout(speedTimer);
+  speedTimer = setTimeout(() => { if ($('#status').textContent === t && S.summary) status(S.summary); }, 1500);
+}
+canvas.addEventListener('wheel', e => { e.preventDefault(); S.speed = Math.max(2, Math.min(800, S.speed * (e.deltaY < 0 ? 1.25 : 0.8))); showSpeed(); }, {passive: false});
 
 // ---------- clicking: the ground point under the pointer, then the nearest object to it ----------
 function pick(px, py) {
@@ -438,11 +447,11 @@ function pick(px, py) {
   for (let i = 0; i < list.length; i++) { const o = list[i], d = Math.hypot(o.x - hit[0], o.row - hit[2]); if (d < bd) { bd = d; best = i; } }
   const box = $('#info');
   const link = best >= 0 ? m.links.find(l => l.object === best) : null;
-  if (best < 0) { box.style.display = 'block'; box.innerHTML = `<h2>Ground</h2><p>${hit[0].toFixed(1)}, ${hit[2].toFixed(1)} · height ${(hit[1] * 32).toFixed(0)}</p>`; return; }
+  if (best < 0) { box.style.display = 'block'; box.innerHTML = `<h2>Ground</h2><p>x ${hit[0].toFixed(1)}, y ${hit[2].toFixed(1)} · height ${(hit[1] * 32).toFixed(0)}</p>`; return; }
   const o = list[best];
   box.style.display = 'block';
-  box.innerHTML = `<h2>${esc(o.name || 'type ' + o.type)}</h2><p>Type ${o.type}${o.model != null ? `, model ${o.model}` : ''} · ${o.fixed ? 'fixed' : 'movable'}${o.drawn ? '' : ' · not drawn'}<br>${o.x.toFixed(1)}, ${o.row.toFixed(1)}, height ${o.height}</p>` +
-    (link ? `<p>Map change to <b>${esc(mapName(link.toMap))}</b>.</p><button id="go">Go there</button>` : '') + `<button id="close">Close</button>`;
+  box.innerHTML = `<h2>${esc(o.name || 'type ' + o.type)}</h2><p>Type ${o.type}${o.model != null ? `, model ${o.model}` : ''} · ${o.fixed ? 'can’t be moved' : 'can be moved'}${o.drawn ? '' : ' · not shown in the game'}<br>x ${o.x.toFixed(1)}, y ${o.row.toFixed(1)}, height ${o.height}</p>` +
+    (link ? `<p>Leads to <b>${esc(mapName(link.toMap))}</b></p><button id="go">Go there</button>` : '') + `<button id="close">Close</button>`;
   $('#close').onclick = () => { box.style.display = 'none'; };
   if (link) $('#go').onclick = () => { box.style.display = 'none'; loadMap(link.toMap, link.toX != null ? {x: link.toX, z: link.toRow, y: (link.toHeight || 0) / 32 + 20, pitch: -0.5} : null); };
 }
@@ -460,20 +469,20 @@ const readHash = () => Object.fromEntries(new URLSearchParams(location.hash.slic
   try {
     S.manifest = await fetchJson('manifest.json');
     const sel = $('#map');
-    sel.innerHTML = S.manifest.maps.map(m => `<option value="${m.id}">${m.id}: ${esc(m.name || '(unnamed)')}</option>`).join('');
+    sel.innerHTML = S.manifest.maps.map(m => `<option value="${m.id}">${m.id}: ${esc(m.name || 'Unnamed map')}</option>`).join('');
     sel.onchange = () => loadMap(+sel.value);
     $('#dist').oninput = e => { S.dist = +e.target.value; $('#distv').textContent = S.dist; };
     $('#distv').textContent = S.dist;
     status('Loading terrain textures…');
     const tt = S.manifest.textures.terrain;
-    if (tt.count > MAX_LAYERS) throw new Error(`${tt.count} terrain layers; this GPU allows ${MAX_LAYERS} in one array`);
+    if (tt.count > MAX_LAYERS) throw new Error(`Your graphics card can’t hold all the ground textures (${tt.count} needed, ${MAX_LAYERS} allowed).`);
     S.terrainTex = await textureArray(tt.size, tt.count, tt.files);
     const h = readHash(), id = +(h.map || 9);
     requestAnimationFrame(frame);
     // a hand-edited address can hold anything: a camera with a NaN in it draws nothing (no height: loadMap puts it above the ground)
     const place = Number.isFinite(+h.x) && Number.isFinite(+h.z) && h.x && h.z ? {x: +h.x, y: Number.isFinite(+h.y) && h.y ? +h.y : null, z: +h.z, yaw: +h.yaw || 0, pitch: +h.pitch || -0.5} : null;
     await loadMap(S.manifest.maps.some(m => m.id === id) ? id : S.manifest.maps[0].id, place);
-    loadModels().then(() => status(S.summary)).catch(e => status('Models: ' + e.message));
+    loadModels().then(() => status(S.summary)).catch(e => status('Couldn’t load objects: ' + e.message));
     setInterval(() => { if (S.stats && !S.keys.size) $('#help').dataset.stats = `${S.stats.tilesDrawn} tiles, ${S.stats.objsDrawn} objects`; }, 500);
   } catch (e) { status(e.message); console.error(e); }
 })();

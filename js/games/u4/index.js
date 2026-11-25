@@ -10,7 +10,13 @@ const TALK_FILES = ['LCB', 'LYCAEUM', 'EMPATH', 'SERPENT', 'MOONGLOW', 'BRITAIN'
 const DUNGEON_FILES = ['DECEIT', 'DESPISE', 'DESTARD', 'WRONG', 'COVETOUS', 'SHAME', 'HYTHLOTH', 'ABYSS'];
 const STONES = ['Blue', 'Yellow', 'Red', 'Green', 'Orange', 'Purple', null, null];
 const BALL = {damage: [2, 2, 2, 4, 4, 4, 6, 6], str: [0, 0, 5, 0, 5, 5, 5, 0], dex: [0, 5, 0, 5, 5, 0, 5, 0], int: [5, 0, 0, 5, 0, 5, 5, 0]};
-const KIND_LABEL = {weapons: 'Weapons', armour: 'Armour', food: 'Food', pub: 'Pub', reagents: 'Reagents', healer: 'Healer', inn: 'Inn', guild: 'Guild'};
+const KIND_LABEL = {weapons: 'Weapons', armour: 'Armour', food: 'Food', pub: 'Pub', reagents: 'Reagents', healer: 'Healer', inn: 'Inn', guild: 'Guild', horses: 'Stables', hawkwind: 'Seer'};
+// What touching a dungeon's magic orb does (BALL above), as a sentence.
+const listAnd = a => a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a.join('');
+export const orbText = di => {
+  const up = ['strength', 'dexterity', 'intelligence'].filter((s, i) => [BALL.str, BALL.dex, BALL.int][i][di]);
+  return `Search, and a chosen character touches it: ${BALL.damage[di]}00 damage${up.length ? `, and +5 ${listAnd(up)}` : ''}. Gone afterwards.`;
+};
 const MOVE = {0: 'Stands still.', 1: 'Wanders.', 0x80: 'Follows you.', 0xFF: 'Attacks on sight.'};
 
 // Searching the exact square (U4_SRCH.C SearchSpots): location number (0 outdoors), x, y, what.
@@ -92,19 +98,19 @@ async function renderWorld(d) {
     const gate = d.moongates.findIndex(([a, b]) => a === x && b === y), spot = SEARCH.find(s => !s[0] && s[1] === x && s[2] === y);
     let body = '';
     if (spot) body += p(`<b>Search here: ${spot[3]}.</b> ${spot[4]}`);
-    if (gate >= 0) body += p(`<b>Moongate</b> while Trammel is in phase ${gate}. It sends you to the gate of Felucca’s phase${gate === 4 ? '; with both moons in phase 4 it sends you to the Shrine of Spirituality instead' : ''}.`);
+    if (gate >= 0) body += p(`<b>A moongate</b> opens here while Trammel is in phase ${gate}. It sends you to the gate of Felucca’s phase${gate === 4 ? '; with both moons in phase 4 it sends you to the Shrine of Spirituality instead' : ''}.`);
     if (pl) {
       const k = kindOf(pl.n);
       if (k === 'castle' || k === 'towne' || k === 'village') links.push({label: 'Enter', map: townId(pl.n), focus: [15, 31]});
       if (k === 'dungeon') links.push({label: 'Enter level 1', map: `${DUNGEON_FILES[pl.n - 17]}-1`, focus: [1, 1]});
-      if (pl.n === 24) body += p('Enter only after ringing the Bell, reading the Book and lighting the Candle here, in that order; then the Skull, cast into the lava.');
-      if (k === 'shrine') body += p(`Mantra: <b>${d.mantras[pl.n - 25].toUpperCase()}</b>. Meditate to see a vision; with the virtue at its peak and the rune, partial Avatarhood.`);
+      if (pl.n === 24) body += p('Enter only after ringing the Bell, reading the Book and lighting the Candle here, in that order. Using the Skull here casts it into the lava: not required, but it raises every virtue by 10.');
+      if (k === 'shrine') body += p(`Mantra: <b>${d.mantras[pl.n - 25].toUpperCase()}</b>. Meditate for a vision. With the virtue at its peak and the rune in hand, you reach partial Avatarhood.`);
       return {title: pl.name.replace(/!$/, ''), body, links};
     }
     return {title: tname(d, t), body: (TERRAIN[t] ? p(TERRAIN[t]) : '') + body};
   };
   const info = `<h3>Britannia</h3>
-    <p>256 × 256 squares. Moongates: the open one follows Trammel’s phase, and where it sends you follows Felucca’s. Both moons reset to new on every restore.</p>
+    <p>256 × 256 squares. Moongates: the open one follows Trammel’s phase, and where it sends you follows Felucca’s. Both moons reset to new whenever you load a saved game.</p>
     <p class="muted">Dotted green rings mark squares where Search finds something. The Shrine of Spirituality has no square of its own: only a moongate reaches it.</p>`;
   // the world wraps: the map window moves with & 0xff (U4_MAP.C)
   return {title: 'Britannia', subtitle: 'Ultima IV', width: W, height: W, native: 16, wrap: true, images, svg, cell, features, info, coords: sextant,
@@ -132,7 +138,7 @@ function talkHTML(r) {
   const topic = ['', 'name', 'look', 'job', 'health', r.keyword1, r.keyword2][r.question] || '';
   return `<table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${nl(v)}</td></tr>`).join('')}</table>` +
     (r.ask ? p(`After “${esc(topic.toLowerCase())}”: <i>${nl(r.ask)}</i>`, `Yes: ${nl(r.yes)}`, `No: ${nl(r.no)}`) : '') +
-    (r.humility ? p('<span class="muted">A humility question: bragging (yes) costs humility, no raises it.</span>') : '') +
+    (r.humility ? p('<span class="muted">A humility question: answering yes (bragging) lowers humility; no raises it.</span>') : '') +
     (r.turnAway ? p(`<span class="muted">Turns away ${Math.round(r.turnAway / 2.56)}% of the time.</span>`) : '');
 }
 
@@ -168,8 +174,8 @@ async function renderTown(d, key) {
   const cell = (x, y) => {
     const q = t.people.find(r => r.x === x && r.y === y), c = at(x, y), links = [];
     if (x === 0 || y === 0 || x === 31 || y === 31) links.push(exit);
-    if (loc === 1 && c === 0x1B && key === 'LCB_1') links.push({label: 'Climb to the upper floor', map: 'LCB_2', focus: [x, y]});
-    if (loc === 1 && c === 0x1C && key === 'LCB_2') links.push({label: 'Climb down', map: 'LCB_1', focus: [x, y]});
+    if (loc === 1 && c === 0x1B && key === 'LCB_1') links.push({label: 'Klimb up to the upper floor', map: 'LCB_2', focus: [x, y]});
+    if (loc === 1 && c === 0x1C && key === 'LCB_2') links.push({label: 'Klimb down', map: 'LCB_1', focus: [x, y]});
     if (loc === 1 && c === 0x1C && key === 'LCB_1') links.push({label: 'Down to the dungeon Hythloth', map: 'HYTHLOTH-1', focus: [1, 1]});
     const spot = SEARCH.find(s => s[0] === loc && s[1] === x && s[2] === y && key !== 'LCB_2');
     const spotHTML = spot ? p(`<b>Search here: ${spot[3]}.</b> ${spot[4]}`) : '';
@@ -249,7 +255,7 @@ async function renderLevel(d, key, L) {
     if (hi === 0xF0) return {title: 'Wall'};
     if (hi === 0xE0) return {title: 'Secret door', body: p('Looks like a wall; walk through it.')};
     if (hi === 0xC0) title = 'Door';
-    else if (hi === 0x40) [title, body] = ['Chest', p('Gold, and it may be trapped. Full again next time: entering a dungeon reloads it from its file.')];
+    else if (hi === 0x40) [title, body] = ['Chest', p('Gold, and it may be trapped. Full again the next time you enter the dungeon.')];
     else if (hi >= 0x10 && hi <= 0x30) {
       title = ['', 'Ladder up', 'Ladder down', 'Ladder up and down'][hi >> 4];
       if (hi & 0x10) links.push(L === 1 ? {label: 'Klimb out to Britannia', map: 'world', focus: [pl.x, pl.y]} : {label: `Klimb to level ${L - 1}`, map: id(L - 1), focus: [x, y]});
@@ -257,7 +263,7 @@ async function renderLevel(d, key, L) {
     }
     else if (hi === 0x50) [title, body] = ['Hole in the ceiling', ''];
     else if (hi === 0x60) [title, body] = ['Hole in the floor', ''];
-    else if (hi === 0x70) [title, body] = ['Magic orb', p(`Search, and a chosen character touches it: ${BALL.damage[di]}00 damage, and +5 ${['strength', 'dexterity', 'intelligence'].filter((s, i) => [BALL.str, BALL.dex, BALL.int][i][di]).join(', ') || '(nothing)'}. Gone afterwards.`)];
+    else if (hi === 0x70) [title, body] = ['Magic orb', p(orbText(di))];
     else if (hi === 0x80) [title, body] = ['Trap', p(['Winds: blow out your light.', 'Falling rocks.'][c & 15] || 'A pit.')];
     else if (hi === 0x90) [title, body] = ['Fountain', p(`Search and drink: ${FOUNTAIN[c & 15] || '?'}.`)];
     else if (hi === 0xA0) [title, body] = [`${(FIELD[c & 15] || '?').replace(/^\w/, ch => ch.toUpperCase())} field`, p(c & 15 ? '' : 'Poisons.')];
@@ -274,7 +280,7 @@ async function renderLevel(d, key, L) {
     return {title, body, links};
   };
   const info = `<h3>${esc(pl.name.replace(/!$/, ''))}, level ${L}</h3>
-    <p>Drawn as the game’s gem view draws it (Peer at a gem, or the View spell): $ chests, T traps, F fountains, ^ fields, and the signs for ladders, doors and walls. Fixed in the game file, the same for everyone.</p>
+    <p>Drawn as the game’s gem view draws it (Peer at a gem, or the View spell): $ chests, T traps, F fountains, ^ fields, and the signs for ladders, doors and walls. The same for everyone.</p>
     <p>Rooms (pink numbers) open into fights on their own 11 × 11 maps; red letters are the monsters waiting at the start, which the gem view does not show.</p>
     ${STONES[di] ? `<p>Altar stone: ${STONES[di]}.</p>` : ''}
     <p class="muted">Each level is 8 × 8 and wraps at its edges.</p>`;
@@ -297,10 +303,10 @@ async function renderRoom(d, key, n) {
   let trig = '';
   for (const t of room.triggers) trig += ring(t.at[0], t.at[1], C.event, '.16 .1');
   const svg = svgDoc(11, 11, g('triggers', trig) + g('grid', gridLines(11, 11)));
-  const levelOf = key === 'ABYSS' ? `levels ${(n >> 4) * 2 + 1}-${(n >> 4) * 2 + 2}` : null;
+  const levelOf = key === 'ABYSS' ? `levels ${(n >> 4) * 2 + 1}–${(n >> 4) * 2 + 2}` : null;
   const cell = (x, y) => {
     const foe = room.foes.find(f => f.x === x && f.y === y), t = room.triggers.find(r => r.at[0] === x && r.at[1] === y);
-    let body = t ? p(`<b>Trigger:</b> stepping here turns ${t.a.join(',')}${t.b.join(',') !== t.a.join(',') ? ` and ${t.b.join(',')}` : ''} into ${esc(tname(d, t.tile).toLowerCase())}.`) : '';
+    let body = t ? p(`<b>Trigger:</b> stepping here turns ${t.a.join(', ')}${t.b.join(',') !== t.a.join(',') ? ` and ${t.b.join(', ')}` : ''} into ${esc(tname(d, t.tile).toLowerCase())}.`) : '';
     return {title: foe ? tname(d, foe.tile) : tname(d, room.bytes[y * 11 + x]), body};
   };
   const foes = room.foes.map(f => tname(d, f.tile));
@@ -309,7 +315,7 @@ async function renderRoom(d, key, n) {
     title: `${pl.name.replace(/!$/, '')}, room ${key === 'ABYSS' ? n % 16 : n}`, subtitle: levelOf ? `The Abyss, ${levelOf}` : 'Dungeon room',
     width: 11, height: 11, native: 16, images, svg, cell, features: room.foes.map(f => ({name: tname(d, f.tile), x: f.x, y: f.y})),
     info: `<h3>Room ${key === 'ABYSS' ? n % 16 : n}</h3><p>Foes: ${Object.entries(count).map(([k, v]) => `${v} × ${esc(k)}`).join(', ') || 'none'}.</p>
-      ${n === 15 && key !== 'ABYSS' ? '<p>The altar room: which part of the Key of Three Parts it gives depends on the square of the level you entered from (Truth at x 0-2, Love at x 3, Courage beyond). Stand on (5, 5) and name the stones.</p>' : ''}
+      ${n === 15 && key !== 'ABYSS' ? '<p>The altar room: which part of the Key of Three Parts it gives depends on the square of the level you entered from (Truth at x 0–2, Love at x 3, Courage beyond). Stand on (5, 5) and name the stones.</p>' : ''}
       ${room.triggers.length ? '<p>Dotted squares are triggers that change the room when stepped on.</p>' : ''}
       <p class="muted">Where the party starts depends on the side it enters from.</p>`,
     layers: [{id: 'foes', name: 'Foes'}, {id: 'triggers', name: 'Triggers', swatch: swatch(ring(0, 0, C.event, '.16 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],

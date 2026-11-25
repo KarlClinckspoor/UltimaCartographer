@@ -30,5 +30,5 @@ function regionLabels() {
 
 export default makeU7({id: 'u7si', title: 'Ultima VII: Serpent Isle', world: 'Serpent Isle', subtitle: 'Ultima VII Part Two',
   coords: (x, y) => `In Wis: ${inWis(x, y)}`,
-  overlay: {svg: regionLabels, layers: [{id: 'regions', name: 'Region names (In Wis)', swatch: swatch('<rect x=".1" y=".3" width=".8" height=".4" rx=".1" fill="#14130f" stroke="#e0b354" stroke-width=".06"/>')}]},
+  overlay: {svg: regionLabels, layers: [{id: 'regions', name: 'Region names (from the Locate spell)', swatch: swatch('<rect x=".1" y=".3" width=".8" height=".4" rx=".1" fill="#14130f" stroke="#e0b354" stroke-width=".06"/>')}]},
 });

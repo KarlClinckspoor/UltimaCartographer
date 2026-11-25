@@ -144,15 +144,15 @@ function renderWorld(params) {
       case LAND.TREE: return {title: 'Trees', body: p('Just ground, like the plains.')};
       case LAND.TOWN: return {title: start ? 'Starting town' : 'Town', body: startNote + p('The Adventure Shop: food, rapier, axe, shield, bow and arrows, magic amulet.') +
         (start && castleLost ? p('The castle was placed here too, and the town replaced it: this world has no castle.') : '')};
-      case LAND.DUNGEON: return {title: 'Dungeon entrance', body: p('Every entrance leads to the same levels: the entrance isn’t part of the seed.'), links: [enter]};
-      case LAND.CASTLE: return {title: 'Castle of Lord British', body: p('Lord British gives the quests: kill a given monster, ten of them in all.')};
+      case LAND.DUNGEON: return {title: 'Dungeon entrance', body: p('Every entrance leads to the same levels: only the lucky number decides them.'), links: [enter]};
+      case LAND.CASTLE: return {title: 'Castle of Lord British', body: p('Lord British sets the quests: ten in all, each to kill a named monster.')};
     }
     return null;
   };
 
   const offers = stats(lucky, 3);
   const info = `<h3>This world</h3>
-    <p>Start (town) at <b>${town[0]}, ${town[1]}</b>. ${castleLost ? 'No castle: the start town covered it.' : `Castle at <b>${castle[0]}, ${castle[1]}</b>.`}</p>
+    <p>Starting town at <b>${town[0]}, ${town[1]}</b>. ${castleLost ? 'No castle: the starting town was placed on top of it.' : `Castle at <b>${castle[0]}, ${castle[1]}</b>.`}</p>
     <table><tr><th>Plains</th><td class="num">${count[0]}</td><th>Towns</th><td class="num">${count[3]}</td></tr>
       <tr><th>Mountains</th><td class="num">${count[1]}</td><th>Dungeons</th><td class="num">${count[4]}</td></tr>
       <tr><th>Trees</th><td class="num">${count[2]}</td><th>Castle</th><td class="num">${count[5]}</td></tr></table>
@@ -160,7 +160,7 @@ function renderWorld(params) {
     <h3>Stats offered</h3>
     <table><tr><th></th>${[1, 2, 3].map(k => `<th class="num">${k === 1 ? '1st' : k === 2 ? '2nd' : '3rd'}</th>`).join('')}</tr>
       ${STATS.map((s, i) => `<tr><th>${s}</th>${offers.map(o => `<td class="num">${o[i]}</td>`).join('')}</tr>`).join('')}</table>
-    <p class="muted">Each refusal rolls the next six from the same sequence.</p>`;
+    <p class="muted">Each time you refuse, the next six stats come from the same sequence.</p>`;
 
   return {
     title: 'The world', subtitle: `Lucky number ${lucky}`, width: 21, height: 21, svg, features, cell, info,
@@ -221,18 +221,19 @@ function renderLevel(level, params) {
         'Comes back at full strength on its starting square every time the level is entered.')};
     }
     switch (v) {
-      case DG.FLOOR: return {title: x === 2 && y === 1 ? 'Floor (always open)' : 'Floor',
-        body: isAt ? p('<b>You arrive here.</b> No monster is placed on the square you arrive on.') : '', links: arrive};
-      case DG.WALL: return {title: 'Wall', body: x && y && x < 10 && y < 10 && (x % 2) !== (y % 2) ? p('A gap between two rooms that rolled nothing: a solid wall.') : ''};
-      case DG.DOOR: return {title: 'Door', body: p('Walk straight through; nothing opens it.')};
+      case DG.FLOOR: return {title: 'Floor',
+        body: (x === 2 && y === 1 ? p('This gap between rooms is always open.') : '') +
+          (isAt ? p('<b>You arrive here.</b> No monster is placed on the square you arrive on.') : ''), links: arrive};
+      case DG.WALL: return {title: 'Wall', body: x && y && x < 10 && y < 10 && (x % 2) !== (y % 2) ? p('A gap between two rooms that stayed solid wall.') : ''};
+      case DG.DOOR: return {title: 'Door', body: p('Walk straight through; there’s nothing to open.')};
       case DG.HIDDEN_DOOR: return {title: 'Hidden door', body: p('Looks exactly like a wall in the game, but you can walk through it.')};
       case DG.TRAP: return {title: 'Trap', body: p(`You fall to level ${level + 1}, onto the same square, for ${3}–${level + 2} damage.`,
         'The trap stays: step on it again and you fall again. About one time in four you land inside a wall (stepping out works).'), links: [down(x, y, 'Fall', true)]};
       case DG.HOLE: return {title: 'Hole', body: p(`Climb down (E, K or X) to level ${level + 1}, onto the same square.`), links: [down(x, y, 'Climb down', true)]};
       case DG.CHEST: return {title: 'Chest', body: p(`“Gold!”: ${level}–${6 * level - 1} gold, and always one item: ${CHEST_ITEMS}.`,
-        'Gone once opened, but back the next time the level is made.')};
+        'Gone once opened, but back the next time you enter the level.')};
       case DG.LADDER_DOWN: return {title: 'Ladder down', body: p(`Arrives on the ladder up of level ${level + 1}.`), links: [down(x, y, 'Climb down')]};
-      case DG.LADDER_UP: return {title: level === 1 ? 'Ladder up: the exit' : 'Ladder up',
+      case DG.LADDER_UP: return {title: level === 1 ? 'Ladder up (exit)' : 'Ladder up',
         body: level === 1 ? p('“Exit Dungeon”: back on the surface at the entrance you took. The hit points you earned from kills this trip are added on the way out.')
           : p(`Arrives on the ladder down of level ${level - 1}.`) + (isAt ? p('<b>You arrive here</b> coming down from above.') : ''),
         links: [upLink(x, y)]};
@@ -251,7 +252,7 @@ function renderLevel(level, params) {
     ${atNote}
     <p class="muted">The level is rebuilt every time you enter it: chests refill and killed monsters return.
     Monster squares depend on where you arrive, but by ladder that is always the same square.
-    An amulet ladder can put you in a room instead: click a floor square and choose “Arrive on this square”.</p>`;
+    A ladder made with the magic amulet can put you in a room instead: click a floor square and choose “Arrive on this square”.</p>`;
 
   return {
     title: `Dungeon level ${level}`, subtitle: `Lucky number ${lucky} · level of play ${play}`,
@@ -274,18 +275,18 @@ export default {
   id: 'u0', title: 'Akalabeth', version: 'PC/GOG version (1997 port). Everything is computed from the lucky number.',
   params: [
     {key: 'lucky', label: 'Lucky number', def: 1234, min: -2147483648, max: 2147483647, random: true,
-      help: 'Seeds the world, every dungeon level and the stats offered.'},
+      help: 'Decides the world, every dungeon level and the stats offered.'},
     {key: 'play', label: 'Level of play (1–10)', def: 1, min: 1, max: 10, help: 'Only adds to the monsters’ hit points.'},
-    {key: 'art', label: 'Pictures', def: 0, min: 0, max: 1, options: [[0, 'The game’s'], [1, 'This site’s']],
-      help: 'The world in the game’s own line drawings, or redrawn. The game shows dungeons only in first person, so their maps are always this site’s.'},
+    {key: 'art', label: 'Map style', def: 0, min: 0, max: 1, options: [[0, 'Original'], [1, 'Redrawn']],
+      help: 'The world in the game’s own line drawings, or redrawn. The game shows dungeons only in first person, so their maps are always redrawn.'},
   ],
   transient: ['at'],
   defaultMap: 'world',
   maps(params, mapId) {
     const list = [{id: 'world', name: 'World', group: 'Surface'}];
-    for (let l = 1; l <= LEVELS_LISTED; l++) list.push({id: `level-${l}`, name: String(l), title: `Dungeon level ${l}`, group: 'Dungeon levels (no bottom)'});
+    for (let l = 1; l <= LEVELS_LISTED; l++) list.push({id: `level-${l}`, name: String(l), title: `Dungeon level ${l}`, group: 'Dungeon levels (endless)'});
     const cur = levelOf(mapId);
-    if (cur > LEVELS_LISTED) list.push({id: mapId, name: String(cur), title: `Dungeon level ${cur}`, group: 'Dungeon levels (no bottom)'});
+    if (cur > LEVELS_LISTED) list.push({id: mapId, name: String(cur), title: `Dungeon level ${cur}`, group: 'Dungeon levels (endless)'});
     return list;
   },
   render(mapId, params) {

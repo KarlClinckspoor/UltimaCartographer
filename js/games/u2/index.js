@@ -39,9 +39,9 @@ const PEOPLE = {
 };
 const SHOP = (towne, x, y) => (towne ? [['Weapons', 'Armour'], ['Pub', 'Transport']] : [['Oracle', 'Food'], ['Wizard’s spells', 'Cleric’s spells']])[y < 32 ? 0 : 1][x < 32 ? 0 : 1];
 const SHOP_NOTE = {
-  Weapons: 'Weapons 1-8.', Armour: 'Armour 1-6.', Pub: 'A drink for 5 gold, or tip 0-9 gold for a tip about which monsters carry which items.',
-  Transport: 'Sells a horse, and you mount it at once.', Oracle: 'Pay 0-900 gold for one verse of a poem about the ring.',
-  Food: '100 food.', 'Wizard’s spells': 'Wizards only.', 'Cleric’s spells': 'Clerics only.',
+  Weapons: 'Sells the first 8 weapons.', Armour: 'Sells the first 6 armours.', Pub: 'Buy a drink for 5 gold, or pay 0–9 gold for a hint about which monsters carry which items.',
+  Transport: 'Sells a horse, and you mount it at once.', Oracle: 'Pay 0–900 gold for one verse of a poem about the ring.',
+  Food: 'Sells 100 food.', 'Wizard’s spells': 'Wizards only.', 'Cleric’s spells': 'Clerics only.',
 };
 const DMON = ['', 'Orc', 'Ghost', 'Carrion creeper', 'Viper', 'Gremlin', 'Minotaur', 'Balron'];
 
@@ -103,8 +103,8 @@ function renderSurface(d, id) {
     if (pl) {
       if (pl.tile === 10) return {title: 'Sign', body: p(`It reads “${SIGN_TEXT(era)}”.`) + doorNote, links};
       const exists = d.maps[pl.map];
-      const enter = typeOf(pl.map) >= 4 ? {label: `Enter, level 0`, map: `${pl.map}-0`, focus: [5, 5]} : {label: 'Enter', map: pl.map, focus: [31, 62]};
-      return {title: nameOf(pl.map), body: p('Enter on foot only.') + (exists ? '' : p('No map file for it.')) + doorNote, links: exists ? [enter, ...links] : links};
+      const enter = typeOf(pl.map) >= 4 ? {label: 'Enter level 0', map: `${pl.map}-0`, focus: [5, 5]} : {label: 'Enter', map: pl.map, focus: [31, 62]};
+      return {title: nameOf(pl.map), body: p('Enter on foot only.') + (exists ? '' : p('The game has no map for this place.')) + doorNote, links: exists ? [enter, ...links] : links};
     }
     const [name, note] = TERRAIN[code & 0x7C] || [`Tile ${t}`, ''];
     return {title: name, body: p(note) + doorNote, links};
@@ -121,7 +121,7 @@ function renderSurface(d, id) {
       ${era === 4 ? '<p>A rocket landing on Earth always arrives in 2112 A.D.</p>' : ''}`
     : `<h3>${ZONES[zone]}</h3>
       <p>Hyperwarp to <b>${WARP[planet]}</b> (Xeno-Yako-Zabo) and land on grass. Nothing here is saved: dying or quitting on a planet
-      resumes from the launch on Earth.</p>
+      puts you back where you launched on Earth.</p>
       <p class="muted">The surface wraps around at every edge.</p>`;
   return {
     title: ZONES[zone], subtitle: earth ? 'Earth' : `Planet · warp ${WARP[planet]}`, width: 64, height: 64,
@@ -171,8 +171,8 @@ function renderTown(d, id) {
       const [kind, line] = PEOPLE[q.tile] || [`Tile ${tileOf(q.tile)}`, null];
       const said = talk(q);
       let body = said ? `<p>“${esc(said).replace(/\n/g, ' ')}”</p><p class="muted">Stands still; Transact to hear it.</p>` : '';
-      if (q.tile === 0x6C) body += p('“WELCOME MY CHILD … FIRST MY 50 G.P. TRIBUTE!”, then 300 hit points (200 from 5000, 100 from 7500, none from 9900).');
-      else if (q.tile === 0x68 && !said) body += p(`<b>${SHOP(towne, x, y)}</b>: Transact across the counter. ${SHOP_NOTE[SHOP(towne, x, y)]}`, '<span class="muted">The shop depends on the quarter of the map.</span>');
+      if (q.tile === 0x6C) body += p('“WELCOME MY CHILD … FIRST MY 50 G.P. TRIBUTE!”, then 300 hit points (200 once you have 5000 hit points, 100 once you have 7500, none once you have 9900).');
+      else if (q.tile === 0x68 && !said) body += p(`<b>${SHOP(towne, x, y)}</b>: Transact across the counter. ${SHOP_NOTE[SHOP(towne, x, y)]}`, '<span class="muted">Which shop it is depends on the quarter of the map it’s in.</span>');
       else if (!said && line) body += p(`“${line}”`);
       if (id === 'X32' || id === 'G32') {
         const n = q.mood - 0x80;
@@ -189,8 +189,8 @@ function renderTown(d, id) {
     else if (c === 0x78) title = 'Wall';
     else if (c === 0x7C) title = 'Counter';
     else if (c === 0xA0) [title, body] = ['Locked door', p('Shown as the letter I. Unlock it with a key (guards carry keys), from the east or west only.')];
-    else if (c === 0x54) [title, body] = ['Armour', p('Get: 1 in 4 empty, else cloth, leather or chain. Back every visit.')];
-    else if (c === 0x58) [title, body] = ['Weapon', p('Get: 1 in 8 empty, else dagger to light sword. Back every visit.')];
+    else if (c === 0x54) [title, body] = ['Armour', p('Get it: 1 time in 4 it’s empty; otherwise cloth, leather or chain. Restocked on every visit.')];
+    else if (c === 0x58) [title, body] = ['Weapon', p('Get it: 1 time in 8 it’s empty; otherwise anything from a dagger to a light sword. Restocked on every visit.')];
     else if (c === 0x5C) [title, body] = ['Force field', p('1000 damage, unless you wear the ring.')];
     else if (c === 0xC0) [title, body] = ['Time door', p('Leads to the castle of the era the surface door currently points at (1423 B.C. or 1990 A.D.), or hangs the game with “WRONG DISK” half the time.')];
     else if (c >= 0x80) title = 'Lettering';
@@ -205,7 +205,7 @@ function renderTown(d, id) {
   const info = `<h3>${esc(titleOf(id))}</h3>
     ${shopList.length ? `<p>Shops: ${shopList.join(', ')}.</p>` : ''}
     ${talkers ? `<p>People with something to say:</p><ul>${talkers}</ul>` : ''}
-    <p class="muted">Towns are reloaded from the disk on every visit: killed guards, opened doors and taken items are all back.</p>`;
+    <p class="muted">Towns are reset on every visit: killed guards, opened doors and taken items are all back.</p>`;
   const layers = [
     {id: 'people', name: 'People'},
     {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, C.talk))},
@@ -215,7 +215,7 @@ function renderTown(d, id) {
   ];
   if (parts.timedoors) layers.push({id: 'timedoors', name: 'Time doors', swatch: swatch(ring(0, 0, C.time, '', .14))});
   layers.push({id: 'start', name: 'Where you enter', swatch: swatch(ring(0, 0, C.start, '.18 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false});
-  return {title: titleOf(id), subtitle: zone[0] === 'X' ? 'Earth' : 'Planet', width: 64, height: 64,
+  return {title: titleOf(id), subtitle: zone[0] === 'X' ? 'Earth' : ZONES[zone], width: 64, height: 64,
     images: [{src: base}, {src: ppl.toDataURL(), layer: 'people'}], svg, cell, features, info, layers};
 }
 
@@ -255,10 +255,10 @@ function renderLevel(d, id, L) {
   const cell = (x, y) => {
     const c = at(x, y), links = [];
     if (c === 0x80) return {title: 'Wall'};
-    if (c === 0xC0) return {title: 'Door', body: p('Walk through it going forward; you can’t back through a door.')};
+    if (c === 0xC0) return {title: 'Door', body: p('Walk through it going forward; you can’t back up through a door.')};
     if (c === 0xE0) return {title: 'Secret door', body: p('Drawn as a plain wall, but you can walk through it going forward.')};
     if (c === 0x40) return {title: 'Chest', body: p(L === 15 ? '<b>Tri-lithium</b>: every chest on level 15 holds one.' :
-      `Get: 3 in 4 gold (up to 77), else ${L % 2 ? 'armour' : 'a weapon'}.`, 'Full again on every visit.')};
+      `Get: 3 in 4 gold (up to 77), else ${L % 2 ? 'armour' : 'a weapon'}.`, 'Restocked on every visit.')};
     if (c & 0x30) {
       const k = c & 0x10, dn = c & 0x20;
       if (k) links.push(tower ? go(L + 1, x, y, 'Klimb') : go(L - 1, x, y, 'Klimb'));
@@ -273,12 +273,12 @@ function renderLevel(d, id, L) {
   const kinds = [1, 2, 3, 4, 5, 6, 7].filter(k => 2 * (k - 1) <= L);
   const hp = k => ((2 * k + L) * 8) | 0x10;
   const info = `<h3>${esc(titleOf(id))}, level ${L}</h3>
-    <p>Fixed in the game file: the same for every character.${chests ? ` ${chests} chest${chests > 1 ? 's' : ''}${L === 15 ? ', each with tri-lithium' : ''}.` : ''}</p>
+    <p>Fixed by the game: the same for every character.${chests ? ` ${chests} chest${chests > 1 ? 's' : ''}${L === 15 ? ', each with tri-lithium' : ''}.` : ''}</p>
     <p>Monsters (at most ${L ? 'two' : 'one'} at a time, reappearing almost at once):</p>
     <table><tr><th>Monster</th><th class="num">HP</th></tr>${kinds.map(k => `<tr><td>${DMON[k]}</td><td class="num">${hp(k)}</td></tr>`).join('')}</table>
-    <p>Traps: ${L ? `${L} in 256 per step forward; without tools, death.` : 'none on level 0.'}</p>
+    <p>Traps: ${L ? `${L} in 256 per step forward; without tools, a trap kills you.` : 'none on level 0.'}</p>
     ${id === 'G85' ? '<p class="muted">Pluto’s dungeon ends like a tower: level 15 can be reached but not left by ladder.</p>' : ''}
-    <p class="muted">${tower ? 'Towers count floors upward: K)limb goes up, D)escend down, and descending from level 0 leaves.' : 'K)limb goes up, D)escend down; climbing from level 0 leaves.'} You always enter in the dark.</p>`;
+    <p class="muted">${tower ? 'Towers count floors upward: Klimb goes up, Descend goes down, and descending from level 0 leaves.' : 'Klimb goes up, Descend goes down; climbing from level 0 leaves.'} You always enter in the dark.</p>`;
   return {
     title: `${titleOf(id)}, level ${L}`, subtitle: ZONES[zone], width: 16, height: 16, svg, cell, features, info,
     layers: [
@@ -305,7 +305,7 @@ function ladderName(c, tower, L) {
 const ORDER = ['X0', 'X1', 'X2', 'X3', 'X4', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'];
 
 export default {
-  id: 'u2', title: 'Ultima II', version: 'PC/GOG version. Every map is read from the game files; nothing at map level is random.',
+  id: 'u2', title: 'Ultima II', version: 'PC/GOG version. Every map is read from the game files; none are random.',
   params: [], transient: [], defaultMap: 'X20',
   maps(params, mapId) {
     if (!maps) return [{id: 'X20', name: '1423 B.C.'}];

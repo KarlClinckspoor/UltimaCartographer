@@ -63,7 +63,7 @@ const map = L.map('map', {
 const wrapUnit = v => Math.max(1, Math.min(v.width, v.height) / 24);
 const wrapBounds = v => { const m = 1.5 * wrapUnit(v); return L.latLngBounds(toLatLng(-m, v.height + m), toLatLng(v.width + m, -m)); };
 function wrapSvg(w, h) {
-  const u = wrapUnit({width: w, height: h}), m = 1.5 * u, c = '#e0b354', fs = .3 * u;
+  const u = wrapUnit({width: w, height: h}), m = 1.5 * u, c = '#2c4a86', fs = .3 * u;
   const arrow = (x, y, rot) => `<path d="M-.16 -.2L.14 0L-.16 .2" transform="translate(${x} ${y}) rotate(${rot}) scale(${u})" fill="none" stroke="${c}" stroke-width=".07" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>`;
   const text = (x, y, rot, t) => `<text transform="translate(${x} ${y}) rotate(${rot})" text-anchor="middle" font-size="${fs}" font-family="system-ui, sans-serif" fill="${c}" opacity=".9">${t}</text>`;
   // an arrow by every row and column on a small map, about 16 a side on a big one
@@ -71,8 +71,8 @@ function wrapSvg(w, h) {
   let b = '';
   for (let y = stepY / 2; y < h; y += stepY) b += arrow(w + .35 * u, y, 0) + arrow(-.35 * u, y, 180);
   for (let x = stepX / 2; x < w; x += stepX) b += arrow(x, h + .35 * u, 90) + arrow(x, -.35 * u, 270);
-  b += text(w + .95 * u, h / 2, 90, 'off this edge: back in at the left') + text(-.85 * u, h / 2, -90, 'off this edge: back in at the right');
-  b += text(w / 2, -.75 * u, 0, 'off this edge: back in at the bottom') + text(w / 2, h + 1.0 * u, 0, 'off this edge: back in at the top');
+  b += text(w + .95 * u, h / 2, 90, 'Leave here to come back on the left') + text(-.85 * u, h / 2, -90, 'Leave here to come back on the right');
+  b += text(w / 2, -.75 * u, 0, 'Leave here to come back on the bottom') + text(w / 2, h + 1.0 * u, 0, 'Leave here to come back on the top');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${w + 2 * m} ${h + 2 * m}">${b}</svg>`;
   return new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
 }
@@ -162,7 +162,7 @@ async function show({focus, initialView, keepView} = {}) {
       return show({});
     }
     $('#game').value = game.id;
-    $('#map-title').innerHTML = `Could not draw this map<small>${esc(e.message)}</small>`;
+    $('#map-title').innerHTML = `Couldn’t draw this map<small>${esc(e.message)}</small>`;
     return;
   }
   if (ticket !== showing) return;
@@ -224,7 +224,7 @@ async function show({focus, initialView, keepView} = {}) {
 
 function drawGames() {
   const sel = $('#game');
-  sel.innerHTML = GAMES.map(g => `<option value="${g.id}" ${g.render || g.href ? '' : 'disabled'}>${esc(g.title)}${g.render || g.href ? '' : ' (coming)'}</option>`).join('');
+  sel.innerHTML = GAMES.map(g => `<option value="${g.id}" ${g.render || g.href ? '' : 'disabled'}>${esc(g.title)}${g.render || g.href ? '' : ' (coming soon)'}</option>`).join('');
   sel.onchange = () => {
     const g = GAMES.find(x => x.id === sel.value);
     if (g.href) { sel.value = state.game.id; location.href = g.href; return; }
@@ -243,7 +243,7 @@ function drawPanel() {
       <div class="row">
         ${d.options ? `<select id="p-${d.key}">${d.options.map(([v, l]) => `<option value="${v}" ${+params[d.key] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
     : `<input id="p-${d.key}" type="number" inputmode="numeric" min="${d.min}" max="${d.max}" step="1" value="${params[d.key]}">`}
-        ${d.random ? `<button class="btn" data-random="${d.key}" title="Pick a random one">Random</button>` : ''}
+        ${d.random ? `<button class="btn" data-random="${d.key}" title="Pick a random number">Random</button>` : ''}
       </div>
       ${d.file ? `<div class="row file-row"><label class="btn file-btn">${esc(d.file.label)}<input type="file" data-file="${d.key}" accept="${esc(d.file.accept || '')}" hidden></label><span class="muted" id="f-${d.key}"></span></div>` : ''}
       ${d.help ? `<p class="muted">${esc(d.help)}</p>` : ''}
@@ -253,7 +253,7 @@ function drawPanel() {
     if (!f) return;
     try {
       const v = d.file.read(await f.arrayBuffer());
-      fileNote = {key: d.key, text: `Read ${v} from ${f.name}`};
+      fileNote = {key: d.key, text: `Found ${v} in ${f.name}`};
       go({params: {[d.key]: v}});
     } catch (e) {
       $(`#f-${d.key}`).textContent = e.message;
@@ -314,7 +314,7 @@ function search() {
   const q = $('#search').value.trim().toLowerCase();
   const hits = view.features.filter(f => !q || f.name.toLowerCase().includes(q) || (f.detail || '').toLowerCase().includes(q));
   $('#results').innerHTML = hits.slice(0, 200).map((f, i) =>
-    `<li tabindex="0" data-i="${i}"><span>${esc(f.name)}</span><span class="where">${f.x}, ${f.y}</span></li>`).join('');
+    `<li tabindex="0" data-i="${i}"><span>${esc(f.name)}</span><span class="where">x ${f.x}, y ${f.y}</span></li>`).join('');
   for (const li of document.querySelectorAll('#results li')) {
     const f = hits[li.dataset.i];
     li.onclick = () => openCell(f.x, f.y, true);

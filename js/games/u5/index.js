@@ -6,7 +6,7 @@ import {esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, 
 const DATA = new URL('../../../data/u5/', import.meta.url);
 
 const SHOP_KIND = ['Armourer', 'Pub', 'Stables', 'Shipwright', 'Reagents', 'Provisioner', 'Healer', 'Inn'];   // dialog numbers 0x81-0x88
-const AI = {0: 'Stays put', 1: 'Wanders', 2: 'Wanders widely', 3: 'A child: runs away', 4: 'Keeps shop', 6: 'Demands, attacks or follows', 7: 'Drudges'};
+const AI = {0: 'Stays put', 1: 'Wanders', 2: 'Wanders widely', 3: 'A child: runs away', 4: 'Keeps shop', 6: 'Demands, attacks or follows', 7: 'Works'};
 const DUNGEON_STYLE = [3, 1, 1, 3, 3, 2, 2, 1];   // DungeonMainLoop: 3 brick (Deceit, Wrong, Covetous), 2 cave (Shame, Hythloth), 1 stalactites
 const WALL_TEXT = [['Bottomless Pit'], ['The Maze of Lost Souls'], [], ['The Prison Wrong'], ['The Crypt', 'Upper Crypts', 'Lower Crypts', 'Debters Ally'], ['Deep', 'Deeper', 'Deepest'], ['Mother Lode Maze'], []];
 const FOUNTAIN = ['cures poison', 'heals fully', 'poisons', 'tastes bad (hurts)'];
@@ -17,7 +17,8 @@ const EQUIP_ITEM = new Set([5, 6, 9, 10, 11, 12]), COUNT_ITEM = new Set([2, 7, 8
 const ENTRY_RULE = {13: 'Only while you have no keys.', 14: 'Once a day.', 15: 'Only while you do not own one.'};   // FindHiddenItem entries 0xd-0xf
 const KIND = n => n <= 8 ? 'Townes' : n <= 12 ? 'Lighthouses' : n <= 16 ? 'Huts' : n <= 18 ? 'Castles' : n <= 24 ? 'Villages' : n <= 32 ? 'Keeps' : 'Dungeons';
 const FLOOR = z => z < 0 ? 'Cellar' : z === 0 ? 'Ground floor' : `Upper floor ${z}`;
-const DUNGEON_TILE = new Set([0x16, 0x17, 0x18]);
+// tiles that are a place's entrance on the big maps: huts, villages, townes, keeps, castles, dungeons, the Lycaeum's kind
+const PLACE_TILE = new Set([16, 17, 18, 19, 20, 21, 22, 23, 24, 27, 57, 62]);
 
 const C = {wall: '#4b4e45', wallTop: '#62665a', floor: '#1b1d18', door: '#d9a441', ladder: '#6cc5d9', chest: '#f0c419', event: '#b48cff',
   shop: '#e0b354', talk: '#8cc6e0', gate: '#b48cff', sign: '#f4efe0', item: '#6cd98a', room: '#e57aa8', shrine: '#bff5c9', stair: '#c9a0ff'};
@@ -74,7 +75,9 @@ async function renderBig(d, under) {
   const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
   const images = await gridImages(d, under ? 'under' : 'brit', bytes, W, W, 32);
   const parts = {names: '', shrines: '', gates: '', signs: '', items: ''}, features = [];
-  const places = d.places.filter(pl => under ? pl.n > 32 && DUNGEON_TILE.has(bytes[pl.y * W + pl.x]) : true);
+  // a place belongs on the map whose square there is a settlement or dungeon tile: Ararat and Doom lie in the Underworld,
+  // and the same squares in Britannia are plain terrain (and the reverse for every other place)
+  const places = d.places.filter(pl => PLACE_TILE.has(bytes[pl.y * W + pl.x]));
   for (const pl of places) {
     const col = pl.n > 32 ? '#ffb0a0' : '#f4efe0', small = pl.n >= 19 && pl.n <= 21;
     parts.names += label(pl.x + (small ? .5 : 1.08), pl.y + (pl.n === 20 ? -.3 : pl.n === 19 || pl.n === 21 ? 1.7 : .78), pl.name, small ? .6 : .9, col, small ? 'middle' : 'start');
@@ -101,19 +104,19 @@ async function renderBig(d, under) {
       links.push({label: `Enter ${pl.name}`, map: `P${pl.n}.0`, focus: [15, 30]});
     }
     if (pl && pl.n > 32) links.push(under ? {label: `Klimb up into ${pl.name}, level 8`, map: `D${pl.n - 33}-8`, focus: [x & 7, y & 7]} : {label: `Enter ${pl.name}, level 1`, map: `D${pl.n - 33}-1`, focus: [x & 7, y & 7]});
-    if (pl && pl.n > 32) body += p(under ? `${pl.name}’s bottom level opens here.` : `The dungeon’s top level. Its bottom level leads down into the Underworld at this same square.`);
+    if (pl && pl.n > 32) body += p(under ? `${pl.name}’s bottom level opens here.` : `The dungeon’s entrance. Its bottom level leads down into the Underworld at this same square.`);
     if (pl && pl.n > 32) links.push(under ? {label: 'The same square in Britannia', map: 'brit', focus: [x, y]} : {label: 'The same square in the Underworld', map: 'under', focus: [x, y]});
     return {title: pl ? pl.name : sh ? `Shrine of ${sh.virtue}` : tname(d, t), body, links};
   };
   const info = under
     ? `<h3>The Underworld</h3><p>256 × 256 squares beneath Britannia. Each dungeon’s bottom level opens onto it at the square of the dungeon’s entrance above, so the dungeons are the ways between the two lands.</p>`
     : `<h3>Britannia</h3><p>256 × 256 squares. The eight moonstones start buried at the moongates; at night a gate stands wherever a stone lies buried.</p>
-       <p class="muted">Dotted green rings mark squares where Search finds something; dotted white ones are signposts.</p>`;
+       <p class="muted">Dotted green rings mark squares where Search finds something; dotted white ones are signs.</p>`;
   // both wrap: the position is a byte and the outdoor chunk window is masked with & 0x1f (mainout.c)
   return {title: under ? 'The Underworld' : 'Britannia', subtitle: 'Ultima V', width: W, height: W, native: 16, wrap: true, images, svg, cell, features, info, coords: under ? null : sextant,
     layers: [{id: 'names', name: 'Place names', swatch: swatch(label(.5, .8, 'A', .9))},
-      ...(under ? [] : [{id: 'shrines', name: 'Shrines', swatch: swatch(label(.5, .8, 'S', .9, C.shrine))}, {id: 'gates', name: 'Moongates (at the start)', swatch: swatch(ring(0, 0, C.gate, '', .14))}]),
-      {id: 'signs', name: 'Signposts', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))},
+      ...(under ? [] : [{id: 'shrines', name: 'Shrines', swatch: swatch(label(.5, .8, 'S', .9, C.shrine))}, {id: 'gates', name: 'Moongates (at game start)', swatch: swatch(ring(0, 0, C.gate, '', .14))}]),
+      {id: 'signs', name: 'Signs', swatch: swatch(ring(0, 0, C.sign, '.12 .08'))},
       {id: 'items', name: 'Things to search for', swatch: swatch(ring(0, 0, C.item, '.16 .1', .12))},
       {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}]};
 }
@@ -175,7 +178,7 @@ async function renderTown(d, n, z, hour) {
     if (c === 0xC8 && t.bytes[z + 1]) links.push({label: `Klimb up to the ${FLOOR(z + 1).toLowerCase()}`, map: fid(z + 1), focus: [x, y]});
     if (c === 0xC9 && t.bytes[z - 1]) links.push({label: `Klimb down to the ${FLOOR(z - 1).toLowerCase()}`, map: fid(z - 1), focus: [x, y]});
     if (isStair(c)) for (const zz of [z + 1, z - 1]) if (t.bytes[zz] && isStair(t.bytes[zz][y * 32 + x])) links.push({label: `Stairs to the ${FLOOR(zz).toLowerCase()}`, map: fid(zz), focus: [x, y]});
-    if (isStair(c) && !links.some(l => l.map && l.map !== 'brit')) for (const zz of [z + 1, z - 1]) if (t.bytes[zz]) links.push({label: `Stairs to the ${FLOOR(zz).toLowerCase()}?`, map: fid(zz), focus: [x, y]});
+    if (isStair(c) && !links.some(l => l.map && l.map !== 'brit')) for (const zz of [z + 1, z - 1]) if (t.bytes[zz]) links.push({label: `Stairs (probably) to the ${FLOOR(zz).toLowerCase()}`, map: fid(zz), focus: [x, y]});
     let body = signs.filter(s => s.x === x && s.y === y).map(signHTML).join('') + searchHTML(d, hidden.filter(h => h.x === x && h.y === y));
     const q = here.find(r => r.px === x && r.py === y);
     if (q) {
@@ -185,7 +188,7 @@ async function renderTown(d, n, z, hour) {
       for (const {i, sl} of stops) if (q.hours.some(Boolean) && (q.x[sl] !== x || q.y[sl] !== y || q.z[sl] !== z)) links.push({label: `At ${hh(q.hours[i])}`, map: fid(q.z[sl]), params: {hour: q.hours[i]}, focus: [q.x[sl], q.y[sl]]});
       if (s) return {title: s.name, body: p(`${s.kind}${s.keeper ? `, kept by ${esc(s.keeper)}` : ''}.`) + schedHTML + body, links};
       if (sc) return {title: sc.name.replace(/\{[^}]*\}/g, '') || tname(d, q.type + 0x100), body: `<p class="muted">${esc(tname(d, q.type + 0x100))}</p>` + talkHTML(sc) + schedHTML + body, links};
-      const role = q.talk === 0xFF ? p(n === 5 ? 'Asks half your gold “to charity” to let you pass.' : n === 18 ? 'Lets you pass for the password (wearing the Black Badge).' : 'Asks a tribute of 10 gold for each of your party to let you pass.') : '';
+      const role = q.talk === 0xFF ? p(n === 5 ? 'Asks half your gold “to charity” to let you pass.' : n === 18 ? 'Lets you pass if you give the password while wearing the Black Badge.' : 'Demands 10 gold per party member to let you pass.') : '';
       return {title: tname(d, q.type + 0x100), body: role + schedHTML + body, links};
     }
     return {title: tname(d, c), body, links};
@@ -223,7 +226,7 @@ const roomIndex = (k, r) => k === 1 ? -1 : (k === 0 ? 0 : k - 1) * 16 + r;   // 
 
 function describe(d, k, c) {
   const hi = c & 0xF0, lo = c & 15, style = DUNGEON_STYLE[k];
-  const grapple = c < 0x80 && (c & 8) ? ' With a grapple you can klimb up from here.' : '';
+  const grapple = c < 0x80 && (c & 8) ? ' With a grapple you can Klimb up from here.' : '';
   switch (hi >> 4) {
     case 0: return ['Passage', grapple];
     case 1: return ['Ladder up', grapple];
@@ -308,9 +311,9 @@ function renderLevel(d, k, L) {
     return {title, body: text ? p(text) : '', links};
   };
   const info = `<h3>${esc(pl.name)}, level ${L}</h3>
-    <p>Fixed in the game file, the same for everyone. Klimbing up from level 1 leaves for Britannia; going down from level 8 leads into the Underworld, both at the dungeon’s square.</p>
+    <p>The same for everyone. Klimbing up from level 1 leaves for Britannia; going down from level 8 leads into the Underworld, both at the dungeon’s square.</p>
     <p>Drawn as the View (a gem, or the spell) draws it, with the game’s own glyphs and colours. Room doors carry their room’s number: each opens into a fight on its own 11 × 11 map.</p>
-    <p class="muted">Each level is 8 × 8 and wraps at its edges. An arrow on plain floor marks where a fall lands; a grapple klimbs back up from there.</p>`;
+    <p class="muted">Each level is 8 × 8 and wraps at its edges. An arrow on plain floor marks where a fall lands; with a grapple you can Klimb back up from there.</p>`;
   return {
     title: `${pl.name}, level ${L}`, subtitle: 'Dungeon', width: 8, height: 8, wrap: true, native: 8, images: [{src: gem, layer: 'gem'}], svg, cell, features, info,
     layers: [
@@ -332,9 +335,9 @@ async function renderRoom(d, k, r) {
   for (let L = 1; L <= 8; L++) { const cells = d.dungeonBytes[k].subarray((L - 1) * 64, L * 64); cells.forEach((c, i) => { if ((c >> 4 === 15 || c >> 4 === 10) && (c & 15) === r) doors.push({L, x: i & 7, y: i >> 3}); }); }
   const cell = (x, y) => {
     const foe = room.foes.find(f => f.x === x && f.y === y), t = room.triggers.find(q => q.at[0] === x && q.at[1] === y), c = room.bytes[y * 11 + x];
-    const body = t ? p(`<b>Trigger:</b> stepping here turns ${t.a.join(',')}${t.b.join(',') !== t.a.join(',') ? ` and ${t.b.join(',')}` : ''} into ${esc(tname(d, t.tile).toLowerCase())}.`) : '';
+    const body = t ? p(`<b>Trigger:</b> stepping here turns ${t.a.join(', ')}${t.b.join(',') !== t.a.join(',') ? ` and ${t.b.join(', ')}` : ''} into ${esc(tname(d, t.tile).toLowerCase())}.`) : '';
     const links = doors.map(o => ({label: `Back to level ${o.L}`, map: `D${k}-${o.L}`, focus: [o.x, o.y]}));
-    if (c === 0xC8 || c === 0xC9) links.unshift({label: c === 0xC8 ? 'This ladder klimbs up a level' : 'This ladder goes down a level'});
+    if (c === 0xC8 || c === 0xC9) links.unshift({label: c === 0xC8 ? 'Klimb up a level from this ladder' : 'This ladder goes down a level'});
     return {title: foe ? tname(d, foe.tile) : tname(d, c), body, links: links.filter(l => l.map)};
   };
   const foes = room.foes.map(f => tname(d, f.tile)), count = foes.reduce((m, f) => (m[f] = (m[f] || 0) + 1, m), {});
@@ -344,7 +347,7 @@ async function renderRoom(d, k, r) {
     features: room.foes.map(f => ({name: tname(d, f.tile), x: f.x, y: f.y})),
     info: `<h3>${esc(pl.name)}, room ${r}</h3><p>In it: ${Object.entries(count).map(([kk, v]) => `${v} × ${esc(kk)}`).join(', ') || 'nothing'}.</p>
       ${doors.length ? `<p>Its doors: ${doors.map(o => `<a href="#" data-go='${JSON.stringify({map: `D${k}-${o.L}`, focus: [o.x, o.y]})}'>level ${o.L} (${o.x}, ${o.y})</a>`).join(', ')}.</p>` : ''}
-      ${sides.length ? `<p>The party can enter from the ${sides.join(', ')}.</p>` : ''}
+      ${sides.length ? `<p>The party can enter from the ${sides.length > 1 ? `${sides.slice(0, -1).join(', ')} and ${sides[sides.length - 1]}` : sides[0]}.</p>` : ''}
       ${room.triggers.length ? '<p>Dotted squares are triggers that change the room when stepped on.</p>' : ''}`,
     layers: [{id: 'foes', name: 'Foes and objects'}, {id: 'triggers', name: 'Triggers', swatch: swatch(ring(0, 0, C.event, '.16 .1'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],
   };

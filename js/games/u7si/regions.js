@@ -47,7 +47,7 @@ export const NAMES = {65535: 'the Wilderness', 14: 'Moonshade', 0: 'Castle of th
   23: 'Skullcrusher Mountains', 24: 'Spinebreaker Mountains', 25: 'Sunrise Isle', 26: 'Gorlab Swamp', 28: 'Western Forest', 29: 'Village of the Gwani',
   30: 'Isle of Programmers'};
 // the regions In Wis has no name for, named as Exult's sources name them (not words of the game)
-export const UNNAMED = {27: 'starting area', 31: 'Dream World', 32: 'Silver Seed', 33: 'the Maze'};
+export const UNNAMED = {27: 'Starting area', 31: 'Dream World', 32: 'Silver Seed', 33: 'The Maze'};
 export const LOST = 'We must be lost.';
 
 const N = 3072, WILD = 255;

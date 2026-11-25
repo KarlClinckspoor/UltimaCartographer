@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ultima IX viewer</title>
+<title>Ultima IX in 3D · Ultima Cartographer</title>
 <!-- the Cartographer's icon: without one the browser asks for /favicon.ico at the domain root -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23121310'/%3E%3Cpath d='M3 12L8 3l5 9z' fill='none' stroke='%23e0b354' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
@@ -30,20 +30,21 @@
   #panel.folded > :not(h1) { display: none; }
   @media (max-width: 600px) { #panel { width: auto; max-width: calc(100vw - 44px); } #info { width: auto; left: 10px; top: auto; bottom: 80px; max-height: 45vh; } }
 </style>
+<link rel="stylesheet" href="../css/viewer.css">
 </head>
 <body>
 <canvas id="gl" tabindex="0"></canvas>
 <div id="panel">
-  <h1><button id="fold" title="Fold the panel">–</button><a href="../" title="Back to the Cartographer" style="color:inherit;text-decoration:none">Ultima IX</a></h1>
+  <h1><button id="fold" title="Hide the panel" aria-label="Hide the panel">–</button><a href="../" title="Back to the Cartographer" style="color:inherit;text-decoration:none">Ultima IX</a></h1>
   <label for="map">Map</label>
   <select id="map"></select>
   <label>Show</label>
   <div class="row"><input type="checkbox" id="models" checked><span>Objects</span>
     <input type="checkbox" id="water" checked><span>Water</span></div>
-  <label for="dist">Draw distance <span id="distv"></span></label>
+  <label for="dist">Draw distance: <span id="distv"></span></label>
   <input type="range" id="dist" min="32" max="1024" value="256">
   <div id="status">Loading…</div>
-  <div id="help">Drag: look · WASD (or the Walk button on touch screens): move · Q/E: down/up · Shift: faster · wheel: speed · T: top-down · click: what is there</div>
+  <div id="help">Drag: look · WASD: move (touch screens: Walk button) · Q/E: down/up · Shift: 4× faster · Wheel: speed · T: view from above · Click: what’s here</div>
 </div>
 <div id="info"></div>
 <button id="walk" title="Walk forward (drag to turn)">▲ Walk</button>

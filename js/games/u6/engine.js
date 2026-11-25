@@ -17,9 +17,11 @@ export function makeEngine(cfg) {
   let loading = null, meta = null;
 
   const load = () => loading ||= (async () => {
-    const bin = n => fetch(new URL(n, DATA)).then(r => { if (!r.ok) throw new Error(`data/${cfg.id}/${n} is missing: run tools/extract-u6.mjs`); return r.arrayBuffer(); }).then(b => new Uint8Array(b));
+    // a missing file: the visitor gets a plain message, the console how to rebuild it
+    const missing = n => { console.warn(`data/${cfg.id}/${n} is missing: run tools/extract-u6.mjs`); return new Error(`Couldn’t load the map data for ${cfg.title}. Try reloading the page.`); };
+    const bin = n => fetch(new URL(n, DATA)).then(r => { if (!r.ok) throw missing(n); return r.arrayBuffer(); }).then(b => new Uint8Array(b));
     const [d, sheet, map, chunks, objblk, dngblk, objlist] = await Promise.all([
-      fetch(new URL(`${cfg.id}.json`, DATA)).then(r => { if (!r.ok) throw new Error(`data/${cfg.id}/${cfg.id}.json is missing: run tools/extract-u6.mjs`); return r.json(); }),
+      fetch(new URL(`${cfg.id}.json`, DATA)).then(r => { if (!r.ok) throw missing(`${cfg.id}.json`); return r.json(); }),
       image(new URL('tiles.png', DATA)), bin('map.bin'), bin('chunks.bin'), bin('objblk.bin'), bin('dngblk.bin'), bin('objlist.bin')]);
     Object.assign(d, {sheet, map, chunks, objlist, ground: [], objs: [[], [], [], [], [], []], at: [new Map(), new Map(), new Map(), new Map(), new Map(), new Map()]});
     const u16 = (b, o) => b[o] | b[o + 1] << 8;
@@ -87,9 +89,9 @@ export function makeEngine(cfg) {
   }
   const npcAt = (n, hour) => { const e = n.sched.length ? slotAt(n.sched, hour) : null; return e ? {x: e[2], y: e[3], z: e[4], action: e[1]} : {x: n.x, y: n.y, z: n.z, action: null}; };
   const ACTION = {0x87: 'stands', 0x88: 'stands', 0x89: 'stands', 0x8A: 'stands', 0x8B: 'keeps guard', 0x8C: 'keeps guard', 0x8D: 'keeps guard', 0x8E: 'keeps guard',
-    0x8F: 'wanders', 0x90: 'loiters', 0x91: 'sleeps', 0x92: 'sits', 0x93: 'eats', 0x94: 'farms', 0x95: 'works', 0x96: 'works', 0x97: 'plays music', 0x98: 'begs', 0x99: 'works', 0x9A: 'bell ringing', 0x9B: 'brawls', 0x9C: 'mops', 0x0E: 'stays put', 0x0F: 'patrols east-west', 0x10: 'patrols north-south'};
+    0x8F: 'wanders', 0x90: 'loiters', 0x91: 'sleeps', 0x92: 'sits', 0x93: 'eats', 0x94: 'farms', 0x95: 'works', 0x96: 'works', 0x97: 'plays music', 0x98: 'begs', 0x99: 'works', 0x9A: 'rings the bell', 0x9B: 'brawls', 0x9C: 'mops', 0x0E: 'stays put', 0x0F: 'patrols east-west', 0x10: 'patrols north-south'};
 
-  const tname = (d, t) => cap(clean(d.look[t]) || `tile ${t}`);
+  const tname = (d, t) => cap(clean(d.look[t]) || 'Unnamed object');
   const oname = (d, r) => tname(d, tileOf(d, r) - 0);
 
   function itemLine(d, r, depth = 0) {
@@ -114,7 +116,7 @@ export function makeEngine(cfg) {
   function talkHTML(t) {
     const row = (k, v, c) => `<tr><th>${esc(k)}</th><td>${fmtTalk(v)}${c ? ' <span class="tag">depends</span>' : ''}</td></tr>`;
     return (t.hello ? p(`<i>${fmtTalk(t.hello)}</i>`) : '') + `<table>${t.qa.map(q => row(q.k.join(', '), q.a, q.c)).join('')}</table>` +
-      '<p class="muted">Keywords match on their first four letters. “Depends”: what follows changes with the story.</p>';
+      '<p class="muted">The game matches only the first four letters of a keyword. “Depends” means the answer changes as the story goes on.</p>';
   }
 
   // Level links: up/down through a ladder, hole or mine shaft (map.c PartyChangeLevel).
@@ -225,7 +227,7 @@ export function makeEngine(cfg) {
         title = t ? t.name : tname(d, e.tile);
         body += `<p class="muted">${esc(tname(d, e.tile))}${n.now.action != null && ACTION[n.now.action] ? ` · ${ACTION[n.now.action]}` : ''}${t && t.look ? ` · ${esc(t.look)}` : ''}</p>`;
         if (n.sched.length) {
-          body += `<p class="muted">${n.sched.map(s => `${s[0] >> 5 ? `day ${s[0] >> 5}, ` : ''}${hh(s[0] & 31)}: ${s[2]}, ${s[3]}${s[4] !== z ? ` (${esc(cfg.levels[s[4]])})` : ''}${ACTION[s[1]] ? `, ${ACTION[s[1]]}` : ''}`).join('<br>')}</p>`;
+          body += `<p class="muted">${n.sched.map(s => `${hh(s[0] & 31)}: ${ACTION[s[1]] ? `${ACTION[s[1]]} ` : ''}at ${s[2]}, ${s[3]}${s[4] !== z ? ` (${esc(cfg.levels[s[4]])})` : ''}${s[0] >> 5 ? ` (day ${s[0] >> 5} of the week only)` : ''}`).join('<br>')}</p>`;
           for (const s of n.sched) if (s[2] !== x || s[3] !== y || s[4] !== z) links.push({label: `At ${hh(s[0] & 31)}`, map: `L${s[4]}`, params: {hour: s[0] & 31}, focus: [s[2], s[3]]});
         }
         const inv = d.inventory.get(n.n);
@@ -241,23 +243,30 @@ export function makeEngine(cfg) {
           const r = e.r;
           if (r.type === cfg.objLadder || cfg.entranceTypes.includes(r.type)) { const l = cfg.entrance ? entranceLink(r) : levelLink(d, r); if (l) links.push(l); if (!z && r.qual && cfg.dungeonNames?.[r.qual - 1]) body = p(`<b>${esc(cfg.dungeonName(r.qual))}</b>`) + body; }
           if (r.type === cfg.objRedGate && r.qual && cfg.redGates[r.qual - 1]) { const [gx, gy, gz] = cfg.redGates[r.qual - 1]; links.push({label: 'Where this red gate leads', map: `L${gz}`, focus: [gx, gy]}); }
-          if (r.type === cfg.objEgg) body += p('<span class="muted">An egg: creatures hatch here when you come near (what it holds is listed).</span>');
+          if (r.type === cfg.objEgg) body += p('<span class="muted">A hidden spawn point: the creatures listed here appear when you come near.</span>');
         }
       }
-      if (d.moonstones.some(m => m.x === x && m.y === y && m.z === z)) body += p('<b>Moongate.</b> A moonstone lies buried here when the game starts; the blue gate on it is reached by the Orb of the Moons and by the moons’ phases.');
+      if (d.moonstones.some(m => m.x === x && m.y === y && m.z === z)) body += p('<b>Moongate.</b> A moonstone lies buried here when the game starts. Its blue moongate opens with the moons’ phases, and the Orb of the Moons can take you to it.');
       return {title, body, links};
     };
 
     const info = `<h3>${esc(cfg.levels[z])}</h3>
       <p>${W} × ${W} squares, drawn from the game’s map and objects as they are when a game starts. People stand where their schedule puts them at ${hh(hour)}.</p>
-      <p class="muted">Click a square for everything on it: containers show what they hold, signs and books their text, ladders and holes where they lead, people their day and conversation.</p>`;
+      <p class="muted">Click a square for everything on it: ${[
+        'containers show what they hold',
+        cfg.signTypes.length ? 'signs and books their text' : cfg.bookTypes.length ? 'books their text' : '',
+        cfg.objLadder >= 0 ? 'ladders and holes where they lead' : 'entrances where they lead',
+        'people their day and conversation'].filter(Boolean).join(', ')}.</p>`;
     return {
       title: cfg.levels[z], subtitle: `${cfg.title} · ${hh(hour)}`, width: W, height: W, native: 16, wrap: true, draw, cell, features, info,
       coords: cfg.coords && cfg.coords(z) ? (x, y) => cfg.coords(z)(x, y) : null,
       svg: svgDoc(W, W, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(W, W))),
       layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, '#8cc6e0'))},
-        {id: 'names', name: 'Entrance names', swatch: swatch(label(.5, .8, 'A', .9, '#ffb0a0'))}, {id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, '#b48cff', '', .14))},
-        {id: 'signs', name: 'Signs', swatch: swatch(ring(0, 0, '#f4efe0', '.12 .08'))}, {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],
+        // only the layers this game has: The Savage Empire and Martian Dreams have no named entrances, moongates or signs
+        ...(cfg.dungeonNames ? [{id: 'names', name: 'Entrance names', swatch: swatch(label(.5, .8, 'A', .9, '#ffb0a0'))}] : []),
+        ...(cfg.moonstones ? [{id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, '#b48cff', '', .14))}] : []),
+        ...(cfg.signTypes.length ? [{id: 'signs', name: 'Signs', swatch: swatch(ring(0, 0, '#f4efe0', '.12 .08'))}] : []),
+        {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false}],
     };
   }
 

@@ -53,6 +53,10 @@ export function centredGlyphs(sheet, size = 8, perRow = 16) {
 export async function image(url) { const i = new Image(); i.src = url; await i.decode(); return i; }
 export async function json(url, hint) {
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`${url.pathname?.split('/').slice(-2).join('/') || url} is missing${hint ? `: ${hint}` : ''}`);
+  if (!r.ok) {
+    // The hint (how to rebuild the file) is for developers; visitors get a plain message.
+    console.warn(`${url.pathname?.split('/').slice(-2).join('/') || url} is missing${hint ? `: ${hint}` : ''}`);
+    throw new Error('Couldn’t load the map data. Try reloading the page.');
+  }
   return r.json();
 }

@@ -10,9 +10,9 @@ const TA3 = [[0x02D, 0x082], [0x019, 0x083], [0x051, 0x093], [0x0D1, 0x05B], [0x
 const at = (t, i, z) => t[i] ? [t[i][0], t[i][1], z] : null;
 
 export default makeEngine({
-  id: 'se', title: 'The Savage Empire', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
+  id: 'se', title: 'The Savage Empire', version: 'PC/GOG version. Maps, objects and people as they are at the start of a new game.',
   startHour: 12,
-  levels: ['The Valley of Eodon', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],
+  levels: ['Valley of Eodon', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],
   redGates: [],
   objLadder: -1, objRedGate: -1, objEgg: 0xE6,
   entranceTypes: [0x14, 0xA3, 0x16, 0xE3, 0x103, 0xA0],

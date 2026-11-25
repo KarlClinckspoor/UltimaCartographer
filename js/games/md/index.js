@@ -15,12 +15,12 @@ export const plaque = z => z === 0 ? (x, y) => {
   const lat = Math.trunc((y - 0x200) * 0xf0 / 0x400), lon = Math.trunc((x - 0x200) * 0x168 / 0x400);
   const la = lat > 0 ? `${lat}°S` : lat < 0 ? `${-lat}°N` : '0°';
   const lo = lon === 0 || lon === 180 || lon === -180 ? `${lon === 0 ? 180 : 0}°` : lon > 0 ? `${180 - lon}°W` : `${lon + 180}°E`;
-  return `${la}, ${lo} (as the plaques give it)`;
+  return `${la}, ${lo} (as on the plaques)`;
 } : null;
 
 export default makeEngine({
   coords: plaque,
-  id: 'md', title: 'Martian Dreams', version: 'PC/GOG version. Maps, objects and people as a new game starts, from the game files.',
+  id: 'md', title: 'Martian Dreams', version: 'PC/GOG version. Maps, objects and people as they are at the start of a new game.',
   startHour: 12, ampQuote: true,
   levels: ['Mars', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],
   redGates: [],

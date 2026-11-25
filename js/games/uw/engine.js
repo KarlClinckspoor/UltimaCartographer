@@ -7,6 +7,8 @@ import {esc, g, svgDoc, swatch, gridLines, gridSwatch, image, json} from '../../
 const TYPES = ['solid rock', 'open', 'open to the south-east', 'open to the south-west', 'open to the north-east', 'open to the north-west',
   'slope up to the north', 'slope up to the south', 'slope up to the east', 'slope up to the west'];
 const C = {tele: '#f2b33d', arrive: '#5ec8e8', start: '#7ee081'};
+// the flags the export gives an object, in plain words
+const FLAG = {invisible: 'invisible in the game', trap: 'a trap', trigger: 'a hidden trigger', enchanted: 'enchanted'};
 const cap = s => String(s).replace(/^\w/, c => c.toUpperCase());
 const flat = c => typeof c === 'string' ? esc(c) : `${esc(c.name)}${c.contents?.length ? ` (${c.contents.map(flat).join(', ')})` : ''}`;
 
@@ -18,7 +20,9 @@ export function makeUW(cfg) {
   const load = () => loading ||= json(new URL('manifest.json', DATA), HINT).then(m => (meta = m));
   const level = id => {
     if (!levels.has(id)) levels.set(id, Promise.all([
-      fetch(new URL(`levels/${id}/tiles.bin`, DATA)).then(r => { if (!r.ok) throw new Error(`data/${cfg.id}/levels/${id} is missing: ${HINT}`); return r.arrayBuffer(); }),
+      fetch(new URL(`levels/${id}/tiles.bin`, DATA)).then(r => {
+        if (!r.ok) { console.warn(`data/${cfg.id}/levels/${id} is missing: ${HINT}`); throw new Error(`Couldn’t load the map data for ${cfg.title}. Try reloading the page.`); }
+        return r.arrayBuffer(); }),
       json(new URL(`levels/${id}/objects.json`, DATA))]).then(([t, o]) => ({tiles: new Uint8Array(t), objects: o})));
     return levels.get(id);
   };
@@ -27,19 +31,19 @@ export function makeUW(cfg) {
   const ends = k => k?.kind === 'lever' ? ends(k.does) : k;
 
   return {
-    id: cfg.id, title: cfg.title, version: 'PC/GOG version, as a new game starts. Exported by the Underworld editor from the game files.',
+    id: cfg.id, title: cfg.title, version: 'PC/GOG version. Levels, objects and creatures as they are at the start of a new game.',
     params: [], transient: [], defaultMap: 'L1',
     maps() {
       const list = [{id: '3d', name: 'Open in 3D', href: `uwviewer/#${cfg.id}`, title: 'Fly through the levels in 3D'}];
       if (!meta) return [...list, {id: 'L1', name: 'Level 1'}];
-      for (const l of meta.levels) list.push({id: `L${l.id}`, name: l.realm ? nameOf(l.id).replace(`${l.realm} `, '') : String(l.id), title: l.name, group: l.realm || 'Levels'});
+      for (const l of meta.levels) list.push({id: `L${l.id}`, name: l.realm ? nameOf(l.id).replace(`${l.realm} `, '') : `Level ${l.id}`, title: l.name, group: l.realm || 'Levels'});
       return list;
     },
     async render(mapId, params) {
       const man = await load();
       const id = +String(mapId).replace(/^L/, '');
       const L = man.levels.find(l => l.id === id);
-      if (!L) throw new Error(`no level ${mapId}`);
+      if (!L) throw new Error(`There’s no level called ${mapId}.`);
       const [lv, pic] = await Promise.all([level(id), image(new URL(`levels/${id}/map.png`, DATA))]);
       const O = lv.objects, T = lv.tiles;
       const tile = (tx, ty) => { const o = (ty * 64 + tx) * 8; return {type: T[o], floor: T[o + 1], flags: T[o + 6]}; };
@@ -67,19 +71,19 @@ export function makeUW(cfg) {
 
       const linkLine = k => {
         if (!k) return '';
-        if (k.kind === 'teleport') return `Takes you to ${esc(k.level === id ? 'another place on this level' : nameOf(k.level))} (${k.x}, ${k.y}).`;
-        if (k.kind === 'lever') return `Works ${esc(O[k.object]?.name || 'a trigger')}${k.does ? `: ${linkLine(k.does)}` : '.'}`;
+        if (k.kind === 'teleport') return `Takes you to ${esc(k.level === id ? 'another place on this level' : nameOf(k.level))}.`;
+        if (k.kind === 'lever') return `Operates ${esc(O[k.object]?.name || 'something elsewhere')}${k.does ? `: ${linkLine(k.does)}` : '.'}`;
         return k.text ? esc(cap(k.text)) + (k.text.endsWith('.') ? '' : '.') : '';
       };
       const objHtml = o => {
         const bits = [];
-        if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}${o.critter.talksAs ? `; talks as ${esc(o.critter.talksAs)}` : ''}`);
+        if (o.critter) bits.push(`${esc(cap(o.critter.attitude || ''))}${o.critter.hp != null ? `, ${o.critter.hp} hit points` : ''}${o.critter.talksAs ? `; speaks as ${esc(o.critter.talksAs)}` : ''}`);
         if (o.desc) bits.push(esc(cap(o.desc)));
         if (o.lock) bits.push(`${o.lock.locked ? 'Locked' : 'Unlocked'}${o.lock.key ? `; opened by ${esc(o.lock.key)}` : ''}`);
         if (o.contents?.length) bits.push(`Holds ${o.contents.map(flat).join(', ')}`);
         if (o.text) bits.push(`“${esc(o.text.trim())}”`);
         const l = linkLine(o.link); if (l) bits.push(l);
-        if (o.flags?.length) bits.push(`<span class="muted">${esc(o.flags.join(', '))}</span>`);
+        if (o.flags?.length) bits.push(`<span class="muted">${esc(cap(o.flags.map(f => FLAG[f] || f).join(', ')))}</span>`);
         return `<li><b>${esc(cap(o.name))}</b>${bits.length ? `<br>${bits.join('<br>')}` : ''}</li>`;
       };
       const viewer = (tx, ty) => `uwviewer/#${cfg.id}/${id}/${tx + .5},${ty + .5}`;   // relative to the site's page
@@ -93,11 +97,11 @@ export function makeUW(cfg) {
         const shown = list.filter(o => !o.flags?.includes('invisible') || o.link || o.desc);
         const flags = [t.flags & 1 && 'a door', t.flags & 4 && 'magic does not work here'].filter(Boolean);
         const body = `<p class="muted">${esc(cap(TYPES[t.type] || `type ${t.type}`))}${t.type ? `, floor height ${t.floor}` : ''}${flags.length ? ` · ${flags.join(', ')}` : ''}</p>` +
-          (shown.length ? `<ul>${shown.slice(0, 14).map(objHtml).join('')}</ul>${shown.length > 14 ? `<p class="muted">and ${shown.length - 14} more</p>` : ''}` : '') +
+          (shown.length ? `<ul>${shown.slice(0, 14).map(objHtml).join('')}</ul>${shown.length > 14 ? `<p class="muted">…and ${shown.length - 14} more.</p>` : ''}` : '') +
           (from ? `<p>Arrive here from ${esc([...from].map(l => l === id ? 'elsewhere on this level' : nameOf(l)).join(', '))}.</p>` : '') +
           (t.type ? `<p><a href="${viewer(tx, ty)}" target="_blank">Open here in 3D</a></p>` : '');
         const main = shown.find(o => o.critter) || shown.find(o => o.link) || shown[0];
-        return {title: main ? cap(main.name) : cap(TYPES[t.type] || 'tile'), body, links};
+        return {title: main ? cap(main.name) : cap(TYPES[t.type] || 'square'), body, links};
       };
 
       // where "Open this level in 3D" puts you: the new-game start, else the open tile nearest the middle (not rock)
@@ -111,14 +115,14 @@ export function makeUW(cfg) {
       return {
         title: L.name.replace(/ \(\d+\)$/, ''), subtitle: cfg.title, width: 64, height: 64, native: 16, images: [{src: pic, layer: 'map'}], svg, cell, features,
         info: `<h3>${esc(L.name.replace(/ \(\d+\)$/, ''))}</h3>
-          <p>64 × 64 tiles, north up, as the Underworld editor draws the map: everything on the level, not only what a player has seen. ${L.objects} objects.</p>
+          <p>64 × 64 squares, north up, showing everything on the level (not just what you’ve explored) and its ${L.objects} objects.</p>
           <p>Amber dots are teleports and stairs to other levels: click one to follow it. Blue rings are where they arrive.${L.start ? ' The green arrow is where a new game begins.' : ''}</p>
           <p><a href="${viewer(...entry)}" target="_blank">Open this level in 3D</a></p>`,
         layers: [
           {id: 'map', name: 'Map'},
           {id: 'teleports', name: 'Teleports and stairs', swatch: swatch(`<circle cx=".5" cy=".5" r=".3" fill="${C.tele}" stroke="#111" stroke-width=".08"/>`)},
           {id: 'arrive', name: 'Arrivals', swatch: swatch(`<circle cx=".5" cy=".5" r=".3" fill="none" stroke="${C.arrive}" stroke-width=".12"/>`)},
-          ...(L.start ? [{id: 'start', name: 'New-game start', swatch: swatch(`<path d="M.5 .12L.85 .85L.15 .85z" fill="${C.start}"/>`)}] : []),
+          ...(L.start ? [{id: 'start', name: 'Where a new game starts', swatch: swatch(`<path d="M.5 .12L.85 .85L.15 .85z" fill="${C.start}"/>`)}] : []),
           {id: 'grid', name: 'Grid', swatch: gridSwatch, on: false},
         ],
       };

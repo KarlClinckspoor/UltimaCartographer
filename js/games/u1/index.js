@@ -1,6 +1,6 @@
 // Ultima I: the world, the towns and castles (from the game files, extracted to data/u1 by
 // tools/extract-u1.mjs) and every dungeon level (computed from the character's seed).
-import {level, levelSeed, levelMonsters, CELL} from './u1gen.js';
+import {level, levelMonsters, CELL} from './u1gen.js';
 
 const DATA = new URL('../../../data/u1/', import.meta.url);
 const W = 168, H = 156, TW = 38, TH = 18;
@@ -13,7 +13,7 @@ const TERRAIN = {
   0: ['Water', 'You can’t walk on water: rafts and frigates sail it. Sea monsters live here.'],
   1: ['Grass', 'Land monsters roam it.'],
   2: ['Woods', 'Aircars can’t pass woods. Hidden archers and evil trents live only here.'],
-  3: ['Mountains', 'Impassable, for every vehicle.'],
+  3: ['Mountains', 'Impassable, even in a vehicle.'],
 };
 
 // Signs and monuments, places 41-48: what they say and do (world-and-map.md section 5).
@@ -24,7 +24,7 @@ const SIGNS = [
   ['Shelley’s “Ozymandias”, then “You feel a strange force!”', 'Wisdom +10%. One of the four places a king’s quest can send you.'],
   ['“ULTIMA THULE!” “The sky grows dark, and a strong magic engulfs you!”', 'Stamina +10%.'],
   ['“OMNIA MUTANTUR!”', 'Charisma +10%. One of the four places a king’s quest can send you.'],
-  ['“GO EAST TO GO EAST!”', 'No effect, and no message.'],
+  ['“GO EAST TO GO EAST!”', 'No effect: no gain, and nothing more is said.'],
   ['“The grave is marked: ‘VAE VICTIS’”', 'Stamina +10%. One of the four places a king’s quest can send you.'],
 ];
 const SIGN_NOTE = 'A gain is 10% of the stat (rounded), up to 99. Visiting the same monument twice in a row does nothing (“Hmmmm...no effect!”).';
@@ -75,7 +75,8 @@ function load() {
   return loading ||= (async () => {
     const img = async name => { const i = new Image(); i.src = new URL(name, DATA); await i.decode(); return i; };
     const [json, tiles, town] = await Promise.all([fetch(new URL('u1.json', DATA)).then(r => {
-      if (!r.ok) throw new Error('data/u1/u1.json is missing: run tools/extract-u1.mjs'); return r.json();
+      if (!r.ok) { console.warn('data/u1/u1.json is missing: run tools/extract-u1.mjs'); throw new Error('Couldn’t load the Ultima I map data. Try reloading the page.'); }
+      return r.json();
     }), img('tiles.png'), img('town.png')]);
     // World: one hex digit per cell; raw 5, 6, 7 are terrain codes 6, 7, 9.
     const terrain = new Uint8Array(W * H);
@@ -121,20 +122,20 @@ function renderWorld(d) {
     if (k === 'town') {
       const layout = (pl.n - 1) % 8;
       const shops = Object.keys(SHOPS).filter(s => SHOPS[s][layout]).map(s => SHOP_LABEL[s].toLowerCase());
-      return {title: `The city of ${pl.name}`, body: p(`Shops: ${shops.join(', ')}.`, `Same layout as ${sameLayout(d, pl.n).join(', ')}.`) + `<p class="xy">${land}</p>`,
+      return {title: `The town of ${pl.name}`, body: p(`Shops: ${shops.join(', ')}.`, `Same layout as ${sameLayout(d, pl.n).join(', ')}.`) + `<p class="xy">${land}</p>`,
         links: [{label: 'Open the town', map: mapOf(pl), focus: [19, 17]}]};
     }
     if (k === 'castle') return {title: pl.name, body: p(`The king, and Princess ${PRINCESS[pl.n - 33]} to rescue.`) + `<p class="xy">${land}</p>`,
       links: [{label: 'Open the castle', map: mapOf(pl), focus: [0, 9]}]};
     if (k === 'sign') { const [text, effect] = SIGNS[pl.n - 41]; return {title: pl.name, body: p(text, `<b>${effect}</b>`, `<span class="muted">${SIGN_NOTE}</span>`) + `<p class="xy">${land}</p>`}; }
-    return {title: pl.name, body: p('A dungeon, 10 levels deep. Every entrance uses the same generator: the layout comes from your character’s seed and this entrance’s square.') + `<p class="xy">${land}</p>`,
+    return {title: pl.name, body: p('A dungeon, 10 levels deep. Its layout comes from your character seed and where this entrance is.') + `<p class="xy">${land}</p>`,
       links: [{label: 'Enter level 1', map: mapOf(pl), focus: [1, 1]}]};
   };
 
   const features = d.places.map(pl => ({name: pl.name, x: pl.x, y: pl.y, detail: kindOf(pl.n)}));
   const info = `<h3>Sosaria</h3>
     <p>168 × 156 squares in four lands of 84 × 78, each with 8 towns, 2 castles, 2 monuments and 9 dungeons.</p>
-    <p class="muted">The world wraps around. North and south join plainly. Walking off the east or west edge also
+    <p class="muted">The world wraps around. North and south simply join. Walking off the east or west edge also
     shifts you 77 squares north or south, into the other half: “GO EAST TO GO EAST!”. Crossing into another land on
     foot clears the monsters of the land you left.</p>`;
   return {
@@ -174,7 +175,7 @@ function renderTown(d, n) {
     if (t >= 0x33 && t <= 0x35) parts.donation += ring(x, y, C.donate, '.16 .1');
     if (!castle && SHOP_KIND[t]) { parts.counters += ring(x, y, C.shop, '', .06); features.push({name: SHOPS[SHOP_KIND[t]][layout], x, y, detail: SHOP_LABEL[SHOP_KIND[t]]}); }
     if (castle && (t === 55 || t === 57 || t === 59)) parts.stores += ring(x, y, C.store);
-    if (castle && (t === 60 || t === 61)) { parts.locks += ring(x, y, C.lock); features.push({name: `Lock square ${t}`, x, y}); }
+    if (castle && (t === 60 || t === 61)) { parts.locks += ring(x, y, C.lock); features.push({name: 'Lock square', x, y}); }
     if (castle && t === 62) { parts.throne += ring(x, y, C.throne); features.push({name: 'Throne', x, y}); }
   }
   const start = castle ? [0, 9] : [19, 17];
@@ -182,7 +183,7 @@ function renderTown(d, n) {
   for (const [type, x, y] of people) features.push({name: personName(type, castle, n), x, y, detail: 'person'});
   // one feature per shop is enough for search
   const seen = new Set();
-  const feats = features.filter(ft => { const k = ft.name + (ft.detail || ''); if (ft.detail === 'person' || !seen.has(k)) { seen.add(k); return true; } return false; });
+  const feats = features.filter(ft => { const k = ft.name + (ft.detail || ''); if (ft.detail === 'person' || ft.name === 'Lock square' || !seen.has(k)) { seen.add(k); return true; } return false; });
 
   const svg = svgDoc(TW, TH, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(TW, TH)));
   const exit = {label: 'Leave for the world', map: 'world', focus: [pl.x, pl.y]};
@@ -196,9 +197,9 @@ function renderTown(d, n) {
       if (t === 0x33) [title, body] = ['Donation square', p('Drop pence here: a random attribute rises by a tenth of the amount (up to 99).')];
       else if (t === 0x34) [title, body] = ['Donation square', p('Drop 10 pence or more here for a random weapon.')];
       else if (t === 0x35) [title, body] = ['Donation square', p('Drop pence here for three times as much food.')];
-      else if (t === 55 || t === 57 || t === 59) [title, body] = [`${{55: 'Armour', 57: 'Food', 59: 'Weapon'}[t]} storeroom`, p('Steal here, or Get with the king’s permission (king 8’s white-gem quest allows nine items).')];
-      else if (t === 60 || t === 61) [title, body] = [`Lock square (${t})`, p('Unlock here with the jester’s key: the door to the north opens. The key fits one of the two squares, chosen at random each time you enter.')];
-      else if (t === 62) [title, body] = ['The king’s throne', p('Transact here: offer pence (½ again as many hit points) or service (a quest).')];
+      else if (t === 55 || t === 57 || t === 59) [title, body] = [`${{55: 'Armour', 57: 'Food', 59: 'Weapon'}[t]} storeroom`, p('Steal here, or Get with the king’s permission (one king’s quest, for a white gem, allows nine items).')];
+      else if (t === 60 || t === 61) [title, body] = ['Lock square', p('Unlock here with the jester’s key: the door to the north opens. The key fits one of the two squares, chosen at random each time you enter.')];
+      else if (t === 62) [title, body] = ['The king’s throne', p('Transact here: offer pence (1½ hit points per pence) or service (a quest).')];
       else if (t === 11 && (x === 31 || x === 35)) [title, body] = ['Locked door', p(`The way to Princess ${PRINCESS[n - 33]}. Unlock it from the lock square just south.`)];
     } else {
       if (t === 0x33) [title, body] = ['Donation square', p('Drop pence here: 1½ hit points per pence; 6% of the time a free spell instead.')];
@@ -218,9 +219,9 @@ function renderTown(d, n) {
   const info = castle
     ? `<h3>${esc(pl.name)}</h3>
       <p>Princess ${PRINCESS[n - 33]} is locked in the small room to the ${m === 0 ? 'south-east' : 'north-east'}. Kill the jester for the key, unlock
-      the right lock square, and leave by any edge with her beside you: 500 hit points, pence and experience.</p>
+      the right lock square, and leave by any edge with her beside you, for 500 hit points, pence and experience.</p>
       <p class="muted">Castles ${d.places.filter(q => q.n >= 33 && q.n <= 40 && (q.n - 1) % 2 === m).map(q => short(q.name)).join(', ')} share this map.</p>`
-    : `<h3>The city of ${esc(pl.name)}</h3>
+    : `<h3>The town of ${esc(pl.name)}</h3>
       <table>${shopRows}</table>
       <p class="muted">Towns ${[pl.name, ...sameLayout(d, n)].join(', ')} share this map and these shops.</p>`;
   const layers = castle
@@ -231,7 +232,7 @@ function renderTown(d, n) {
       {id: 'donation', name: 'Donation squares', swatch: swatch(ring(0, 0, C.donate, '.16 .1'))}];
   layers.push({id: 'start', name: 'Where you enter', swatch: swatch(ring(0, 0, C.start, '.18 .1'))}, {id: 'grid', name: 'Grid', swatch: swatch(path('M.5 0V1M0 .5H1', '#888', .06)), on: false});
   return {
-    title: castle ? pl.name : `The city of ${pl.name}`, subtitle: LANDS[landOf(pl.x, pl.y)] && `The Lands of ${LANDS[landOf(pl.x, pl.y)]}`,
+    title: castle ? pl.name : `The town of ${pl.name}`, subtitle: LANDS[landOf(pl.x, pl.y)] && `The Lands of ${LANDS[landOf(pl.x, pl.y)]}`,
     width: TW, height: TH, images: [{src: base}, {src: ppl, layer: 'people'}], svg, features: feats, cell, info, layers,
   };
 }
@@ -241,7 +242,7 @@ function personNote([type, , , hp], castle) {
   const hpLine = `Hit points ${hp}.`;
   switch (type) {
     case 17: return p(hpLine, 'Stands still, until you anger the town: then guards close in and attack.');
-    case 19: return p(hpLine, 'Wanders. Bumping into you steals your best weapon you don’t have readied.',
+    case 19: return p(hpLine, 'Wanders. Bumping into you steals your best weapon that isn’t readied.',
       castle ? 'Carries the key to the princess’s door: kill him for it. Sings “I’ve got the key!”.' : 'Sings “Ho eyoh he hum!”.');
     case 20: return p(hpLine, 'Stands on his throne. Transact with him from the throne square.');
     case 21: return p(hpLine, 'Stands behind the counter.');
@@ -288,13 +289,13 @@ function renderDungeon(d, n, L, params) {
       case CELL.FLOOR: return {title: 'Floor', body: x === arrive[0] && y === arrive[1] ? p('<b>You arrive here.</b>') : ''};
       case CELL.WALL: return {title: 'Wall'};
       case CELL.SECRET_DOOR: return {title: 'Secret door', body: p('Looks and blocks like a wall. Inform (search) next to it turns it into a door.')};
-      case CELL.DOOR: return {title: 'Door', body: p('Walk in, but not from another door: you can’t step from one door straight into the next.')};
+      case CELL.DOOR: return {title: 'Door', body: p('You can walk in, but not straight from another door.')};
       case CELL.FORCE_FIELD: return {title: 'Force field', body: p('Blocks like a wall. The Destroy spell removes it; Create makes new ones.')};
-      case CELL.LADDER_DOWN: return {title: 'Ladder down', body: p('K-limb facing north or south. You arrive on the ladder up of the next level.'),
+      case CELL.LADDER_DOWN: return {title: 'Ladder down', body: p('Klimb facing north or south. You arrive on the ladder up of the next level.'),
         links: [{label: `Climb down to level ${L + 1}`, map: id(L + 1), focus: [x, y]}]};
       case CELL.LADDER_UP: return L === 1
-        ? {title: 'Ladder up: the exit', body: p('K-limb facing north or south to leave. Bonus hit points (twice the experience earned down here) are paid on the way out.'), links: [{label: 'Back to the world', map: 'world', focus: [pl.x, pl.y]}]}
-        : {title: 'Ladder up', body: p('K-limb facing north or south.') + (x === arrive[0] && y === arrive[1] ? p('<b>You arrive here</b> coming down from above.') : ''),
+        ? {title: 'Ladder up (exit)', body: p('Klimb facing north or south to leave. Bonus hit points (twice the experience earned down here) are paid on the way out.'), links: [{label: 'Back to the world', map: 'world', focus: [pl.x, pl.y]}]}
+        : {title: 'Ladder up', body: p('Klimb facing north or south.') + (x === arrive[0] && y === arrive[1] ? p('<b>You arrive here</b> coming down from above.') : ''),
           links: [{label: `Climb up to level ${L - 1}`, map: id(L - 1), focus: [x, y]}]};
     }
     return null;
@@ -302,13 +303,13 @@ function renderDungeon(d, n, L, params) {
 
   const mons = levelMonsters(L).map(i => d.dungeonMonsters[i] + (i === 11 ? ' (a mimic)' : ''));
   const info = `<h3>${esc(pl.name)}, level ${L}</h3>
-    <p>Walls, doors, secret doors, force fields and ladders for character seed <b>${seed}</b> (level seed ${levelSeed(seed, pl.x, pl.y, L)}).
+    <p>Walls, doors, secret doors, force fields and ladders for character seed <b>${seed}</b>.
     They are the same on every visit.</p>
-    <p><b>Changes every visit</b> (the game re-seeds from the clock):</p>
+    <p><b>Changes every visit</b> (the game rolls them afresh each time):</p>
     <ul><li>3 monsters, from: ${mons.join(', ')}.</li>
       <li>Up to ${L + 1} chests or coffins, worth ${3}–${L * L + 9} pence each. A chest trap costs ${L} hit points (never for a thief, or with Agility 75 or more).</li></ul>
     ${L === 10 ? '<p>The bottom: no ladder down.</p>' : ''}
-    <p class="muted">Checked against the running game: two characters, levels 1–10, identical.</p>`;
+    <p class="muted">Checked against the real game with two characters: all 10 levels matched.</p>`;
   return {
     title: `${pl.name}, level ${L}`, subtitle: `Character seed ${seed} · entrance at ${pl.x}, ${pl.y}`,
     width: 11, height: 11, svg, features, cell, info,
@@ -340,10 +341,10 @@ export default {
   id: 'u1', title: 'Ultima I', version: 'PC/GOG version (1986 remake). Towns and the world come from the game files; dungeons from your character’s seed.',
   params: [
     {key: 'seed', label: 'Character seed (dungeons only)', def: 0, min: 0, max: 65535, random: true,
-      help: 'Set when the character was created (clock + Wisdom + class), kept at offset 0x32 of PLAYERn.U1. Read it from your save file, or try any number.',
+      help: 'Set when the character is created. Load your save file (PLAYERn.U1) to read it, or try any number.',
       file: {label: 'Read from PLAYERn.U1…', accept: '.u1,.U1', read(buf) {
-        if (buf.byteLength < 0x34) throw new Error('Too short for a character file.');
-        if (buf.byteLength !== 820) throw new Error(`Not a character file: ${buf.byteLength} bytes, expected 820.`);
+        if (buf.byteLength < 0x34) throw new Error('This file is too short to be an Ultima I character file.');
+        if (buf.byteLength !== 820) throw new Error(`This isn’t an Ultima I character file (it’s ${buf.byteLength} bytes, not 820).`);
         return new DataView(buf).getUint16(0x32, true);
       }}},
   ],
