@@ -42,8 +42,13 @@ const fetchBin = async n => { const r = await fetch(url(n)); if (!r.ok) missing(
 const fetchJson = async n => { const r = await fetch(url(n)); if (!r.ok) missing(n); return r.json(); };
 const loadImage = async n => { const r = await fetch(url(n)); return createImageBitmap(await r.blob(), {premultiplyAlpha: 'none', colorSpaceConversion: 'none'}); };
 // the texture strips as one TEXTURE_2D_ARRAY: perFile layers of size x size a file, stacked top to bottom
+// Also measures each layer's drawn part: a picture smaller than a layer (the gravestone's 64 x 48) is stored with
+// see-through rows or columns around it, and a model's face is mapped onto the picture, not the empty margin
+// (bounds: u0, v0, u1, v1 a layer, in 0-1).
 async function textureArray(T) {
   const t = gl.createTexture();
+  T.bounds = new Float32Array(T.count * 4);
+  const probe = new OffscreenCanvas(T.size, T.size * T.perFile).getContext('2d', {willReadFrequently: true});
   const bind = () => { gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D_ARRAY, t); };
   bind();
   gl.texStorage3D(gl.TEXTURE_2D_ARRAY, Math.log2(T.size) + 1, gl.RGBA8, T.size, T.size, T.count);
@@ -51,6 +56,13 @@ async function textureArray(T) {
     const img = await loadImage(T.files[i]), n = Math.min(img.height / T.size, T.count - i * T.perFile);
     bind();
     gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i * T.perFile, T.size, T.size, n, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    probe.clearRect(0, 0, T.size, T.size * T.perFile); probe.drawImage(img, 0, 0);
+    const px = probe.getImageData(0, 0, T.size, T.size * n).data, z = T.size;
+    for (let k = 0; k < n; k++) {
+      let x0 = z, y0 = z, x1 = -1, y1 = -1;
+      for (let y = 0; y < z; y++) for (let x = 0; x < z; x++) if (px[((k * z + y) * z + x) * 4 + 3] > 127) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      T.bounds.set(x1 < 0 ? [0, 0, 1, 1] : [x0 / z, y0 / z, (x1 + 1) / z, (y1 + 1) / z], (i * T.perFile + k) * 4);
+    }
     img.close();
   }
   bind();
@@ -172,7 +184,17 @@ async function loadLevel(id, place) {
   f(0, 3, gl.FLOAT, 24, 0); f(1, 2, gl.FLOAT, 24, 12); i(2, 1, gl.UNSIGNED_SHORT, 24, 20); f(3, 1, gl.UNSIGNED_BYTE, 24, 22, true); i(4, 1, gl.UNSIGNED_BYTE, 24, 23);
   // models
   lv.modelVao = gl.createVertexArray(); gl.bindVertexArray(lv.modelVao);
-  if (L.modelVertices) { buf(models); f(0, 3, gl.FLOAT, 28, 0); f(1, 2, gl.FLOAT, 28, 12); i(2, 1, gl.UNSIGNED_SHORT, 28, 20); i(3, 1, gl.UNSIGNED_SHORT, 28, 22); i(4, 1, gl.UNSIGNED_SHORT, 28, 26); }
+  if (L.modelVertices) {
+    // each textured face onto its picture's drawn part (see textureArray)
+    const mv = new DataView(models), B = S.man.textures.bounds;
+    for (let o = 0; o + 28 <= models.byteLength; o += 28) {
+      const layer = mv.getUint16(o + 20, true); if (layer === 65535 || !B) continue;
+      const [u0, v0, u1, v1] = B.subarray(layer * 4, layer * 4 + 4);
+      if (u0 === 0 && v0 === 0 && u1 === 1 && v1 === 1) continue;
+      mv.setFloat32(o + 12, u0 + mv.getFloat32(o + 12, true) * (u1 - u0), true);
+      mv.setFloat32(o + 16, v0 + mv.getFloat32(o + 16, true) * (v1 - v0), true);
+    }
+    buf(models); f(0, 3, gl.FLOAT, 28, 0); f(1, 2, gl.FLOAT, 28, 12); i(2, 1, gl.UNSIGNED_SHORT, 28, 20); i(3, 1, gl.UNSIGNED_SHORT, 28, 22); i(4, 1, gl.UNSIGNED_SHORT, 28, 26); }
   // sprites: instanced quads
   lv.spriteVao = gl.createVertexArray(); gl.bindVertexArray(lv.spriteVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, quad); f(0, 2, gl.FLOAT, 8, 0);

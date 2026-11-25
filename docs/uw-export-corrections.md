@@ -31,6 +31,24 @@ as written is in the editor's `docs/WEB-EXPORT.md`. These are the points where
 11. **Size.** UW1 is 13.6 MB and UW2 20.5 MB, mostly `mesh.bin` (about 1 MB a level in
     UW1). An indexed or quantised mesh would cut that if it matters.
 
+## Requested: model UVs onto the picture, not the padded layer (2026-11-25)
+
+A texture smaller than its 64 × 64 layer is stored with see-through rows or columns around it:
+the gravestone's 64 × 48 picture has 16 empty rows on top, and door pictures 11 to 13 (and a
+pixel or two at some sides). `models.bin` maps each textured face onto the whole layer (u and v
+0 to 1), so the empty margin is drawn too; the viewer ignores alpha on models, and it showed as a
+black band at the top of every gravestone and door. Affected: UW1 layers 62, 66, 67, 70, 73, 75,
+81, 122, 123, 161, 162, 164, 165, 179, 181; UW2 layers 52, 61, 62, 129, 168, 172, 184, 211, 261,
+292, 294, 295 (doors and gravestones only).
+
+**Ask:** give model vertices the UVs of the picture's real size within its layer (for the
+gravestone, v from 16/64 to 1), or list each layer's picture rectangle in
+`manifest.textures` (e.g. `rects: [[x, y, w, h], ...]`).
+
+**Meanwhile** the viewer measures each layer's opaque bounding box when the textures load and
+remaps model UVs onto it (`uwviewer/viewer.js`, `textureArray` and the models block of the level
+loader). Once the export does this, that code can go.
+
 Not done on the editor's side: the pixel comparison with the editor's 3D view (there is no
 viewer to draw it with yet), and a run against a real `game.gog`.
 
