@@ -10,7 +10,7 @@ export const swatch = body => `<svg viewBox="0 0 1 1">${body}</svg>`;
 export const ring = (x, y, color, dash = '', w = .1) =>
   `<rect x="${x + .06}" y="${y + .06}" width=".88" height=".88" rx=".12" fill="none" stroke="${color}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
 export const label = (x, y, text, size, color = '#f4efe0', anchor = 'middle') =>
-  `<text x="${f(x)}" y="${f(y)}" font-size="${size}" font-family="Georgia, serif" text-anchor="${anchor}" fill="${color}" stroke="#000" stroke-width="${f(size / 6)}" paint-order="stroke" stroke-linejoin="round">${esc(text)}</text>`;
+  `<text x="${f(x)}" y="${f(y)}" font-size="${size}" font-family="'Alegreya Sans', 'Segoe UI', system-ui, sans-serif" text-anchor="${anchor}" fill="${color}" stroke="#000" stroke-width="${f(size / 6)}" paint-order="stroke" stroke-linejoin="round">${esc(text)}</text>`;
 // Labels that keep out of each other's way. Each item: {x, y (its square), text, size, color, first?: 'right' | 'above'};
 // it goes in the first of these spots that overlaps no label or marked square placed before it: right of the square,
 // left, above, below, then rows further above and below (with a thin line back to the square). Returns one SVG
