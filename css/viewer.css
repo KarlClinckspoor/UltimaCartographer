@@ -21,4 +21,13 @@ button:hover { border-color: #2c4a86; }
 input[type=range], input[type=checkbox] { accent-color: #2c4a86; }
 #walk { font: 500 17px "Alegreya Sans", "Segoe UI", system-ui, sans-serif; background: #f4ecd6; color: #33261a; border-color: #8a6c48; }
 #walk.on { background: #2c4a86; color: #f6efdc; border-color: #2c4a86; }
-#panel, #info { scrollbar-width: thin; scrollbar-color: #b49d74 transparent; }
+/* scrollbars as on the maps (css/site.css): a leather strap in a ruled groove */
+@supports not selector(::-webkit-scrollbar) { #panel, #info { scrollbar-width: thin; scrollbar-color: #8a6440 transparent; } }
+#panel::-webkit-scrollbar, #info::-webkit-scrollbar { width: 13px; }
+#panel::-webkit-scrollbar-track, #info::-webkit-scrollbar-track { background: linear-gradient(90deg, transparent 5px, rgba(118, 99, 74, .28) 5px 6px, rgba(255, 250, 235, .5) 6px 7px, rgba(118, 99, 74, .28) 7px 8px, transparent 8px); }
+#panel::-webkit-scrollbar-thumb, #info::-webkit-scrollbar-thumb {
+  border: 2px solid transparent; border-radius: 7px; background-clip: padding-box; background-color: #7a5432;
+  background-image: repeating-linear-gradient(180deg, transparent 0 4px, rgba(244, 226, 190, .55) 4px 6px), linear-gradient(90deg, rgba(40, 22, 8, .45), rgba(255, 230, 190, .25) 45%, rgba(40, 22, 8, .45));
+  background-size: 2px 100%, 100% 100%; background-position: center, center; background-repeat: no-repeat; box-shadow: inset 0 0 0 1px rgba(40, 22, 8, .55);
+}
+#panel::-webkit-scrollbar-button, #info::-webkit-scrollbar-button { display: none; }

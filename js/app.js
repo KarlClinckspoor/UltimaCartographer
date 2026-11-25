@@ -271,9 +271,14 @@ function drawPanel() {
   const off = hidden[game.id] ||= new Set();
   const seen = seenLayers[game.id] ||= new Set();
   for (const l of view.layers) if (!seen.has(l.id)) { seen.add(l.id); if (l.on === false) off.add(l.id); }
-  $('#layers').innerHTML = (view.animate ? `<li><label><input type="checkbox" id="animate" ${animOn ? 'checked' : ''}><span>Animation</span></label></li>` : '') + view.layers.map(l => `
+  $('#layers').innerHTML = `<li><label><input type="checkbox" id="quill" ${quillOn ? 'checked' : ''}><span>Quill cursor</span></label></li>` + (view.animate ? `<li><label><input type="checkbox" id="animate" ${animOn ? 'checked' : ''}><span>Animation</span></label></li>` : '') + view.layers.map(l => `
     <li><label><input type="checkbox" data-layer="${l.id}" ${off.has(l.id) ? '' : 'checked'}>
       ${l.swatch || ''}<span>${esc(l.name)}</span></label></li>`).join('');
+  $('#quill').onchange = e => {
+    quillOn = e.target.checked;
+    document.body.classList.toggle('quill', quillOn);
+    try { localStorage.setItem('quill', quillOn ? '1' : '0'); } catch {}
+  };
   if (view.animate) $('#animate').onchange = e => {
     animOn = e.target.checked;
     try { localStorage.setItem('animate', animOn ? '1' : '0'); } catch {}
@@ -302,6 +307,9 @@ function drawPanel() {
 // and the clock that redraws an animated map's tiles in view.
 let animOn = (() => { try { const v = localStorage.getItem('animate'); if (v !== null) return v === '1'; } catch {} return !matchMedia('(prefers-reduced-motion: reduce)').matches; })();
 let animTimer = null, animTick = 0, animBusy = false;
+// The map cursor: Ultima Underworld's automap quill (img/quill.png) or the browser's own; remembered, quill by default
+let quillOn = (() => { try { return localStorage.getItem('quill') !== '0'; } catch { return true; } })();
+document.body.classList.toggle('quill', quillOn);
 function animate() {
   clearInterval(animTimer); animTimer = null;
   if (!animOn || !view?.animate || !drawLayer) return;
