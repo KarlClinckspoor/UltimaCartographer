@@ -62,6 +62,19 @@ for (const g of ['u6', 'se', 'md']) {
   check(`U6: ways down with a matching ladder back (${ok} of ${downs.length})`, downs.length >= 20 && ok >= downs.length * 0.9);
   // npctrack.c DungeonNames: the seven dungeons each have an entrance of their quality on the surface
   for (let q = 1; q <= 7; q++) check(`U6: entrance of dungeon ${q}`, all.some(r => r.z === 0 && (r.type === 0x134 || r.type === 0x146) && r.qual === q));
+  // runic text: % comes only just before ^ (EA) or \ (EE), so the translation can drop it (engine.js translit)
+  const runic = d.books.flatMap(b => b.match(/<[^>]*>/g) || []).join('');
+  check('U6: % in runes only before EA or EE', /%/.test(runic) && !/%(?![\\^])/.test(runic) && (runic.match(/%/g).length === (runic.match(/[\\^]/g) || []).length));
+  // eggs (0x14F) hold what they hatch: the drake egg at 569, 340
+  const recs = [];
+  for (const [b, n] of [[d.bin('objblk.bin'), 64], [d.bin('dngblk.bin'), 5]]) for (let o = 0, k = 0; k < n; k++) {
+    const block = [], cnt = b.readUInt16LE(o); o += 2;
+    for (let i = 0; i < cnt; i++, o += 8) block.push({status: b[o], assoc: b.readUInt16LE(o + 1), x: b.readUInt16LE(o + 1) & 0x3FF, y: (b.readUInt16LE(o + 2) >> 2) & 0x3FF, type: b.readUInt16LE(o + 4) & 0x3FF, qty: b[o + 6]});
+    recs.push(block);
+  }
+  const egg = recs.flat().find(r => r.type === 0x14F && !(r.status & 0x18) && r.x === 569 && r.y === 340);
+  const inEgg = egg && recs.find(bl => bl.includes(egg)).filter((r, i, bl) => (r.status & 0x18) === 8 && bl[r.assoc] === egg);
+  check('U6: the egg at 569, 340 hatches a drake', inEgg?.length === 1 && d.look[d.baseTile[inEgg[0].type]] === 'drake');
 }
 
 // The Savage Empire and Martian Dreams

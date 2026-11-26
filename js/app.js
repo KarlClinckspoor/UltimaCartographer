@@ -23,8 +23,9 @@
 //                                       toggleable parts in elements with data-layer="<layer id>"
 //     layers: [{id, name, swatch, on?}],
 //     features: [{name, x, y, detail?}], what search finds
-//     cell(x, y, at?) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}], box?: [x, y, w, h]} | null
+//     cell(x, y, at?, off) -> {title, body, links: [{label, map?, params?, focus?: [x, y]}], box?: [x, y, w, h]} | null
 //                                       at: the exact point clicked, [x, y] in map units (absent for links and search)
+//                                       off: Set of layer ids switched off (what the map shows there)
 //                                       box: what to outline instead of the square (e.g. an item's picture)
 //     hover,                            false: no square follows the pointer (maps where a square is a pixel)
 //     coords(x, y) -> string,           the game's own coordinates for a square (a sextant's reading), shown
@@ -408,7 +409,7 @@ function cellAt(latlng) {
 }
 
 function openCell(x, y, pan, at) {
-  const c = view.cell(x, y, at);
+  const c = view.cell(x, y, at, hidden[state.game.id] || new Set());
   const box = c?.box ? L.latLngBounds(toLatLng(c.box[0], c.box[1] + c.box[3]), toLatLng(c.box[0] + c.box[2], c.box[1])) : cellBounds(x, y);
   selRect.setBounds(box).addTo(map);
   if (pan && !map.getBounds().contains(box)) map.panTo(box.getCenter());

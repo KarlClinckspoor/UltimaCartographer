@@ -110,6 +110,19 @@ for (let t = 0; t < 0x800; t++) {
 }
 writeFileSync(join(out, 'tiles.png'), png(W * 16, (0x800 / W) * 16, sheet, 4));
 
+// ---------- the rune font: U6.CH is two fonts of 128 characters of 8 x 8, 1 bit a pixel, bit 7 the left; the second
+// is the runes (capitals, and [ \ ] ^ _ for TH EE NG EA ST) and Gargish (lower case), as Nuvie's FontManager loads it.
+// Written white on transparent, 16 a row, as tools/extract-u5.mjs writes RUNES.CH.
+if (has('U6.CH')) {
+  const cs = file('U6.CH').subarray(128 * 8, 256 * 8), w = 16 * 8, h = 8 * 8, px = Buffer.alloc(w * h * 4);
+  for (let c = 0; c < 128; c++) for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    if (!((cs[c * 8 + y] >> (7 - x)) & 1)) continue;
+    const o = ((Math.floor(c / 16) * 8 + y) * w + (c % 16) * 8 + x) * 4;
+    px[o] = px[o + 1] = px[o + 2] = px[o + 3] = 255;
+  }
+  writeFileSync(join(out, 'runes.png'), png(w, h, px, 4));
+}
+
 // ---------- tile tables ----------
 const flags = file('TILEFLAG');   // 800h terrain, 800h flags, 400h weights, 800h flags 2 (main.c)
 const terrain = [...flags.subarray(0, 0x800)], tileFlag = [...flags.subarray(0x800, 0x1000)], tileFlag2 = [...flags.subarray(0x1400, 0x1C00)];

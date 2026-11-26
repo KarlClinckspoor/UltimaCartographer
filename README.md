@@ -189,10 +189,16 @@ as small labels in a corner of the cell.
   are drawn in the browser as you pan, from the game's chunk map (12-bit chunk indexes, 8 × 8-tile
   chunks) and its object blocks, so the data stays small (about 1 MB a game). Far out, each square
   is drawn as its tile's average colour.
-- Objects are as a new game starts, multi-tile ones included; eggs (creature spawners) are not
-  drawn but are listed with what they hold. Containers list their contents; signs and books show
-  their text (rune digraphs expanded); ladders, holes and entrances link to where they lead (U6 by
-  the game's coordinate rule, the other two by their entrance tables).
+- Objects are as a new game starts, multi-tile ones included. Eggs (hidden spawn points) are not
+  drawn themselves; the "Egg spawns, all hatched" layer (on by default) draws what each one holds on
+  its square, as if every egg had hatched, and the egg's popup gives the chance, the hours and how
+  many of each (the rules as Nuvie's EggManager has them). Containers list their contents; signs and
+  books show their text; ladders, holes and entrances link to where they lead (U6 by the game's
+  coordinate rule, the other two by their entrance tables).
+- Ultima VI's runic text (signs, plaques, gravestones) shows translated or, with "Runic text: In
+  runes", in the game's rune font from `U6.CH` (`data/u6/runes.png`; without it, Ultima V's
+  `RUNES.CH`, the same runes on the same keys, and Gargish stays in letters). `[ ] _ ^ \` are TH,
+  NG, ST, EA, EE; BOOK.DAT also writes `%` just before every `^` and `\`, which adds no letter.
 - People stand where their schedule puts them at the chosen hour; their popup has their day, what
   they carry and their conversation, condensed from each decompilation's `dialogue.json`
   (keywords and answers; "depends" marks answers that change with the story).

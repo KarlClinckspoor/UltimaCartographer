@@ -21,7 +21,7 @@ export const sextant = z => z === 0 || z === 5 ? (x, y) => {
 export default makeEngine({
   coords: sextant,
   id: 'u6', title: 'Ultima VI', version: 'PC/GOG version. Maps, objects and people as they are at the start of a new game.',
-  startHour: 12, moonstones: true,
+  startHour: 12, moonstones: true, runes: true,
   levels: ['Britannia', 'Underground, level 1', 'Underground, level 2', 'Underground, level 3', 'Underground, level 4', 'Gargoyle lands'],
   redGates: RX.map((x, i) => x || RY[i] ? [x, RY[i], RZ[i]] : null),
   dungeonNames: DUNGEONS,

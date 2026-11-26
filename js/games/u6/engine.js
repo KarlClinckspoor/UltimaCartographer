@@ -141,7 +141,8 @@ export function makeEngine(cfg) {
     const [d, sheet, map, chunks, objblk, dngblk, objlist] = await Promise.all([
       fetch(new URL(`${cfg.id}.json`, DATA)).then(r => { if (!r.ok) throw missing(`${cfg.id}.json`); return r.json(); }),
       image(new URL('tiles.png', DATA)), bin('map.bin'), bin('chunks.bin'), bin('objblk.bin'), bin('dngblk.bin'), bin('objlist.bin')]);
-    Object.assign(d, {sheet, map, chunks, objlist, ground: [], objs: [[], [], [], [], [], []], at: [new Map(), new Map(), new Map(), new Map(), new Map(), new Map()]});
+    const maps6 = () => Array.from({length: 6}, () => new Map());
+    Object.assign(d, {sheet, map, chunks, objlist, ground: [], objs: [[], [], [], [], [], []], at: maps6(), spawnAt: maps6()});
     const u16 = (b, o) => b[o] | b[o + 1] << 8;
     d.u16 = u16;
     // object blocks: a count, then 8-byte records (status, x/y/z in 3 bytes, type | frame << 10, quantity, quality)
@@ -154,6 +155,12 @@ export function makeEngine(cfg) {
       const use = r.status & 0x18;
       if (use === LOCXYZ) { if (r.z <= 5) { d.objs[r.z].push(r); place(d, r); } }
       else if (use !== CONTAINED) { if (!d.inventory.has(r.assoc)) d.inventory.set(r.assoc, []); d.inventory.get(r.assoc).push(r); }
+    }
+    // What every egg would hatch, standing on the egg's square (the first of a kind hatches there; Nuvie's EggManager
+    // tosses the rest within a few squares): each embryo once, in the egg's order.
+    for (const z of [0, 1, 2, 3, 4, 5]) for (const r of d.objs[z]) {
+      if (r.type !== cfg.objEgg || !r.contents) continue;
+      for (const c of r.contents) if (!(c.status & INVISIBLE)) place(d, {...c, x: r.x, y: r.y, z, contents: undefined, egg: r}, d.spawnAt);
     }
     // NPCs 1-FFh with a shape
     d.npcs = [];
@@ -172,14 +179,14 @@ export function makeEngine(cfg) {
 
   const tileOf = (d, r) => d.baseTile[r.type] + r.frame;
   // An object on (x, y) also covers the square left of it (double width), above it (double height), or the three (both).
-  function place(d, r) {
+  function place(d, r, into = d.at) {
     const t = tileOf(d, r), f = d.tileFlag[t] || 0, parts = [[0, 0, 0]];
     if ((f & DOUBLE_W) && (f & DOUBLE_H)) parts.push([-1, 0, 1], [0, -1, 2], [-1, -1, 3]);
     else if (f & DOUBLE_W) parts.push([-1, 0, 1]);
     else if (f & DOUBLE_H) parts.push([0, -1, 1]);
     const W = r.z ? 256 : 1024;
     for (const [dx, dy, k] of parts) {
-      const key = ((r.y + dy) & (W - 1)) * W + ((r.x + dx) & (W - 1)), m = d.at[r.z];
+      const key = ((r.y + dy) & (W - 1)) * W + ((r.x + dx) & (W - 1)), m = into[r.z];
       if (!m.has(key)) m.set(key, []);
       m.get(key).push({r, tile: t - k, part: k});
     }
@@ -220,7 +227,22 @@ export function makeEngine(cfg) {
     return `<span class="item-icon" aria-hidden="true" style="background-image:url('${d.sheet.src}');background-size:3200% ${rows * 100}%;` +
       `background-position:${(t % 32) / 31 * 100}% ${(t >> 5) / (rows - 1) * 100}%"></span>`;
   }
+  // An egg: a hidden spawn point. Its rules as Nuvie (ScummVM) implements them for all three games, in EggManager
+  // spawn_eggs and spawn_egg: it is checked once each time you come within 20 squares of it (from farther than 8,
+  // so not when it is already in view), hatching if 1-100 at random is at most its quantity (100 or more: always);
+  // its quality says when (under 10 any time, 10-19 by day, 06:00-18:59, 20-29 by night, 30 on any time); each
+  // embryo inside hatches 1 to its quantity at random, or exactly its quantity from an egg of quantity 100
+  // (Ultima VI's silver serpent only ever one).
+  function eggLine(d, r) {
+    const when = r.qual < 10 || r.qual >= 30 ? 'at any hour' : r.qual < 20 ? 'by day only (06:00–18:59)' : 'by night only (19:00–05:59)';
+    const chance = r.qty >= 100 ? 'every time' : `${r.qty}% of the times`;
+    const count = c => cfg.id === 'u6' && c.type === 0x19D ? '1' : r.qty === 100 || c.qty <= 1 ? String(Math.max(1, c.qty)) : `1–${c.qty}`;
+    const kids = (r.contents || []).map(c => `<li>${icon(d, c)}${esc(oname(d, c))} ×${count(c)}${c.status & INVISIBLE ? ' <span class="muted">(invisible)</span>' : ''}</li>`).join('');
+    return `${icon(d, r)}${esc(oname(d, r))} <span class="muted">(a hidden spawn point)</span>` +
+      (kids ? `<p class="muted">Hatches ${chance} you come within 20 squares of it, ${when}:</p><ul>${kids}</ul>` : '<p class="muted">It holds nothing, so nothing hatches.</p>');
+  }
   function itemLine(d, r, depth = 0) {
+    if (r.type === cfg.objEgg) return eggLine(d, r);
     let s = icon(d, r) + esc(oname(d, r));
     if (r.qty > 1) s += ` (${r.qty})`;
     if (r.status & INVISIBLE) s += ' <span class="muted">(invisible)</span>';
@@ -229,10 +251,65 @@ export function makeEngine(cfg) {
     return s;
   }
   // Text between < and > is in runes, where [ ] _ ^ \ stand for TH, NG, ST, EA, EE (the street signs: <BELLRI]ER LANE>);
-  // lower case inside them is Gargish. & breaks a line.
-  const runes = t => t.replace(/<([^>]*)>/g, (m, r) => /[a-z]/.test(r) ? `‹${r}›` : r.replace(/\[/g, 'TH').replace(/\]/g, 'NG').replace(/_/g, 'ST').replace(/\^/g, 'EA').replace(/\\/g, 'EE'));
+  // lower case inside them is Gargish. & breaks a line. Ultima VI's BOOK.DAT also writes % just before every ^ and \
+  // (D%^[ is DEATH, SW%\PERS SWEEPERS; 15 times, never anywhere else): it adds no letter, so the translation drops it.
+  const translit = r => r.replace(/%/g, '').replace(/\[/g, 'TH').replace(/\]/g, 'NG').replace(/_/g, 'ST').replace(/\^/g, 'EA').replace(/\\/g, 'EE');
+  const runes = t => t.replace(/<([^>]*)>/g, (m, r) => /[a-z]/.test(r) ? `‹${r}›` : translit(r));
   const isReadable = r => (cfg.bookTypes.includes(r.type) || cfg.signTypes.includes(r.type)) && r.qual > 0;
-  const bookHTML = (d, r) => { const t = d.books[r.qual - 1]; return t ? `<p class="sign">${esc(runes(t)).replace(/&amp;|\*/g, '<br>').replace(/\n/g, '<br>')}</p>` : ''; };
+  const plainHTML = t => esc(runes(t)).replace(/&amp;|\*/g, '<br>').replace(/\n/g, '<br>');
+  const bookHTML = (d, r, font) => {
+    const t = d.books[r.qual - 1];
+    if (!t) return '';
+    if (!font || !/<[^>]*>/.test(t)) return `<p class="sign">${plainHTML(t)}</p>`;
+    const said = runes(t).replace(/[*&\n]/g, ' ').replace(/\s+/g, ' ').trim();
+    return `<p class="sign runic" role="img" aria-label="${esc(said)}" title="${esc(said)}" style="--runes:url('${font.url}')">${runicHTML(t, font)}</p>`;
+  };
+
+  // Runic text drawn in the game's rune font: U6.CH's second half (data/u6/runes.png, written by tools/extract-u6.mjs),
+  // or, without it, Ultima V's RUNES.CH, the same runes on the same keys (data/u5/font1.png), which has no Gargish.
+  // A character whose glyph is blank in the font is written as itself, except % (see translit), which is left out.
+  let runeFont = null;
+  const loadRunes = () => runeFont ||= (async () => {
+    let img, own = true;
+    try { img = await image(new URL('runes.png', DATA)); }
+    catch {
+      own = false;
+      console.warn(`data/${cfg.id}/runes.png is missing: run tools/extract-u6.mjs (until then the runes are Ultima V's)`);
+      img = await image(new URL('../u5/font1.png', DATA));
+    }
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const a = ctx.getImageData(0, 0, c.width, c.height).data, blank = new Uint8Array(128);
+    for (let ch = 0; ch < 128; ch++) {
+      let any = false;
+      for (let y = 0; y < 8 && !any; y++) for (let x = 0; x < 8; x++) if (a[(((ch >> 4) * 8 + y) * c.width + (ch & 15) * 8 + x) * 4 + 3]) { any = true; break; }
+      blank[ch] = !any;
+    }
+    ctx.globalCompositeOperation = 'source-in'; ctx.fillStyle = '#f1e6c8'; ctx.fillRect(0, 0, c.width, c.height);
+    return {url: c.toDataURL(), blank, gargish: own};
+  })();
+  function runicHTML(t, font) {
+    const glyph = ch => `<span class="rune-glyph" style="background-position:-${ch & 15}em -${ch >> 4}em"></span>`;
+    let out = '';
+    for (const [, plain, rune] of t.matchAll(/([^<]*)(?:<([^>]*)>)?/g)) {
+      if (plain) out += plainHTML(plain);
+      if (rune == null) continue;
+      if (/[a-z]/.test(rune) && !font.gargish) { out += esc(`‹${rune}›`); continue; }
+      out += rune.split(/( +)/).map(w => {
+        if (/^ *$/.test(w)) return w ? ' ' : '';
+        let s = '';
+        for (const ch of w) {
+          const c = ch.charCodeAt(0);
+          if (c < 128 && !font.blank[c]) s += glyph(c);
+          else if (ch !== '%') s += esc(ch);
+        }
+        return `<span class="rune-word">${s}</span>`;
+      }).join('');
+    }
+    return out;
+  }
 
   function fmtTalk(s) {
     if (cfg.ampQuote) s = s.replace(/&/g, '”');   // Martian Dreams writes a closing quote as &
@@ -266,7 +343,8 @@ export function makeEngine(cfg) {
     meta = d;
     const z = Math.max(0, Math.min(5, +(/^L(\d)$/.exec(mapId || '') || [0, 0])[1])), W = z ? 256 : 1024;
     const hour = Math.max(0, Math.min(23, params.hour ?? cfg.startHour));
-    const gr = ground(d, z), at = d.at[z];
+    const font = cfg.runes && params.runes === 1 ? await loadRunes() : null;
+    const gr = ground(d, z), at = d.at[z], spawnAt = d.spawnAt[z];
     const people = d.npcs.map(n => ({...n, now: npcAt(n, hour)})).filter(n => n.now.z === z);
     const peopleAt = new Map();
     for (const n of people) {
@@ -281,7 +359,11 @@ export function makeEngine(cfg) {
     // tile goes under everything already there, except a foreground tile, which goes just under the first foreground
     // tile there, or on top when it is the extra part of a double-size object. So of two plain objects on one square the
     // first in the list is drawn on top (a vase on its end table). People are visited first: above plain objects, under
-    // foreground ones.
+    // foreground ones. What eggs hatch (layer 'spawns') comes after the people, as the game adds them to its actors.
+    const actorsAt = (k, off) => {
+      const pl = off.has('people') ? null : peopleAt.get(k), sp = off.has('spawns') ? null : spawnAt.get(k);
+      return pl && sp ? [...pl, ...sp] : pl || sp;
+    };
     const order = (list, pl = []) => {
       const bg = [], st = [];
       for (const e of [...pl, ...list]) {
@@ -336,8 +418,8 @@ export function makeEngine(cfg) {
         for (let y = ya; y < yb; y++) {
           let run = null;   // squares of one changing ground tile and nothing else, side by side: one fillRect a tick
           for (let x = xa; x < xb; x++) {
-            const k = y * W + x, list = at.get(k), pl = !off.has('people') && peopleAt.get(k), tiles = [gr[k]];
-            if (list || pl) for (const e of order(list ? drawn(list, off) : [], pl || [])) { const t = e.n ? e.tile : shown(e.tile); blit(t, x, y); tiles.push(t); }
+            const k = y * W + x, list = at.get(k), pl = actorsAt(k, off), tiles = [gr[k]];
+            if (list || pl) for (const e of order(list ? drawn(list, off) : [], pl || [])) { const t = e.n || e.r?.egg ? e.tile : shown(e.tile); blit(t, x, y); tiles.push(t); }
             if (!A || scale < 8 || !tiles.some(t => A.slot[t] >= 0)) { run = null; continue; }
             const px = (x - x0) * scale, py = (y - y0) * scale;
             if (tiles.length === 1 && run && run.t[0] === tiles[0]) { run.n++; continue; }
@@ -361,6 +443,8 @@ export function makeEngine(cfg) {
           let c = avg[gr[y * W + x]];
           const list = at.get(y * W + x);
           if (list) for (const e of order(drawn(list, off))) { const a = avg[e.tile]; if (a[3] > 40) c = a; }
+          const sp = !off.has('spawns') && spawnAt.get(y * W + x);
+          if (sp) for (const e of sp) { const a = avg[e.tile]; if (a[3] > 40) c = a; }
           const pl = !off.has('people') && peopleAt.get(y * W + x);
           if (pl) c = [255, 240, 200, 100];
           const o = (py * 256 + qx) * 4;
@@ -371,7 +455,7 @@ export function makeEngine(cfg) {
     }
 
     // Labels: entrances named by their quality (npctrack.c DungeonNames), moongates, readable signs.
-    const parts = {names: '', gates: '', signs: '', talkers: ''}, features = [];
+    const parts = {names: '', gates: '', signs: '', talkers: ''}, features = [], eggFeatures = [];   // eggs last in the search list
     for (const r of d.objs[z]) {
       if (cfg.entranceTypes.includes(r.type) && r.qual && cfg.dungeonNames?.[r.qual - 1] && !z) {
         const nm = cfg.dungeonName(r.qual);
@@ -383,22 +467,24 @@ export function makeEngine(cfg) {
         features.push({name: runes(d.books[r.qual - 1]).replace(/[*&\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60), x: r.x, y: r.y, detail: 'sign'});
       }
       if (r.type === cfg.objRedGate && r.qual) features.push({name: 'Red moongate', x: r.x, y: r.y, detail: 'gate'});
+      if (r.type === cfg.objEgg && r.contents) eggFeatures.push({name: `Egg: ${[...new Set(r.contents.map(c => oname(d, c)))].join(', ')}`, x: r.x, y: r.y, detail: 'spawn point'});
     }
     for (const m of d.moonstones) if (m.z === z) { parts.gates += ring(m.x, m.y, '#b48cff', '', .14); features.push({name: 'Moongate (moonstone)', x: m.x, y: m.y, detail: 'gate'}); }
     for (const n of people) {
       const t = d.talk[n.n];
       if (t) { parts.talkers += ring(n.now.x, n.now.y, '#8cc6e0'); features.push({name: t.name, x: n.now.x, y: n.now.y, detail: (t.qa.find(q => q.k.includes('job'))?.a || '').slice(0, 80)}); }
     }
+    features.push(...eggFeatures);
 
-    const cell = (x, y) => {
-      const key = y * W + x, links = [];
+    const cell = (x, y, _at, off = new Set()) => {
+      const key = y * W + x, links = [], spawns = off.has('spawns') ? [] : spawnAt.get(key) || [];
       // a double-width or double-height object or person also covers the squares left of and above its own: a click
       // there shows it, as on its own square, and outlines both squares
-      if (!(peopleAt.get(key) || []).some(e => !e.part) && !(at.get(key) || []).some(e => e.part === 0)) {
-        const pe = (peopleAt.get(key) || []).find(e => e.part), oe = (at.get(key) || []).find(e => e.part);
+      if (!(peopleAt.get(key) || []).some(e => !e.part) && !(at.get(key) || []).some(e => e.part === 0) && !spawns.some(e => !e.part)) {
+        const pe = (peopleAt.get(key) || []).find(e => e.part), oe = (at.get(key) || []).find(e => e.part) || spawns.find(e => e.part);
         const [ax, ay] = pe ? [pe.n.now.x, pe.n.now.y] : oe ? [oe.r.x, oe.r.y] : [];
         if (ax != null && (ax !== x || ay !== y)) {
-          const c = cell(ax, ay);
+          const c = cell(ax, ay, undefined, off);
           return c && {...c, box: [Math.min(x, ax), Math.min(y, ay), Math.abs(ax - x) + 1, Math.abs(ay - y) + 1]};
         }
       }
@@ -419,15 +505,17 @@ export function makeEngine(cfg) {
       const list = (at.get(key) || []).filter(e => e.part === 0);
       if (list.length) {
         const items = order(list).reverse();   // the one drawn on top first
-        body += `<ul>${items.map(e => `<li>${itemLine(d, e.r)}${isReadable(e.r) ? bookHTML(d, e.r) : ''}</li>`).join('')}</ul>`;
+        body += `<ul>${items.map(e => `<li>${itemLine(d, e.r)}${isReadable(e.r) ? bookHTML(d, e.r, font) : ''}</li>`).join('')}</ul>`;
         if (!(peopleAt.get(key) || []).some(e => !e.part)) title = oname(d, items[0].r);
         for (const e of items) {
           const r = e.r;
           if (r.type === cfg.objLadder || cfg.entranceTypes.includes(r.type)) { const l = cfg.entrance ? entranceLink(r) : levelLink(d, r); if (l) links.push(l); if (!z && r.qual && cfg.dungeonNames?.[r.qual - 1]) body = p(`<b>${esc(cfg.dungeonName(r.qual))}</b>`) + body; }
           if (r.type === cfg.objRedGate && r.qual && cfg.redGates[r.qual - 1]) { const [gx, gy, gz] = cfg.redGates[r.qual - 1]; links.push({label: 'Where this red gate leads', map: `L${gz}`, focus: [gx, gy]}); }
-          if (r.type === cfg.objEgg) body += p('<span class="muted">A hidden spawn point: the creatures listed here appear when you come near.</span>');
         }
       }
+      // shown on the map as if hatched: the egg's line above says what, how many, how often and when
+      const hatched = spawns.filter(e => !e.part);
+      if (hatched.length && !(peopleAt.get(key) || []).some(e => !e.part)) title = `${oname(d, hatched[0].r)} (from an egg)`;
       if (d.moonstones.some(m => m.x === x && m.y === y && m.z === z)) body += p('<b>Moongate.</b> A moonstone lies buried here when the game starts. Its blue moongate opens with the moons’ phases, and the Orb of the Moons can take you to it.');
       return {title, body, links};
     };
@@ -438,13 +526,16 @@ export function makeEngine(cfg) {
         'containers show what they hold',
         cfg.signTypes.length ? 'signs and books their text' : cfg.bookTypes.length ? 'books their text' : '',
         cfg.objLadder >= 0 ? 'ladders and holes where they lead' : 'entrances where they lead',
+        'eggs what they hatch, how many and how often',
         'people their day and conversation'].filter(Boolean).join(', ')}.</p>`;
     return {
       title: cfg.levels[z], subtitle: `${cfg.title} · ${hh(hour)}`, width: W, height: W, native: 16, wrap: true, draw, cell, features, info,
       animate: A ? {ms: A.ms} : undefined,
       coords: cfg.coords && cfg.coords(z) ? (x, y) => cfg.coords(z)(x, y) : null,
       svg: svgDoc(W, W, Object.entries(parts).map(([k, v]) => g(k, v)).join('') + g('grid', gridLines(W, W))),
-      layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'}, {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, '#8cc6e0'))},
+      layers: [{id: 'objects', name: 'Objects'}, {id: 'people', name: 'People'},
+        {id: 'spawns', name: 'Egg spawns, all hatched'},
+        {id: 'talkers', name: 'People who talk', swatch: swatch(ring(0, 0, '#8cc6e0'))},
         // only the layers this game has: The Savage Empire and Martian Dreams have no named entrances, moongates or signs
         ...(cfg.dungeonNames ? [{id: 'names', name: 'Entrance names', swatch: swatch(label(.5, .8, 'A', .9, '#ffb0a0'))}] : []),
         ...(cfg.moonstones ? [{id: 'gates', name: 'Moongates', swatch: swatch(ring(0, 0, '#b48cff', '', .14))}] : []),
@@ -455,7 +546,9 @@ export function makeEngine(cfg) {
 
   return {
     id: cfg.id, title: cfg.title, version: cfg.version,
-    params: [{key: 'hour', slider: true, label: 'Hour of the day', def: cfg.startHour, min: 0, max: 23, help: 'People keep daily schedules. 0 is midnight.'}],
+    params: [{key: 'hour', slider: true, label: 'Hour of the day', def: cfg.startHour, min: 0, max: 23, help: 'People keep daily schedules. 0 is midnight.'},
+      ...(cfg.runes ? [{key: 'runes', label: 'Runic text', options: [[0, 'Translated'], [1, 'In runes']], def: 0, min: 0, max: 1,
+        help: 'Signs, plaques and gravestones written in runes: as the game draws them (hover for the translation), or in letters.'}] : [])],
     transient: [], defaultMap: 'L0',
     maps() { return cfg.levels.map((name, z) => ({id: `L${z}`, name})); },
     render,
