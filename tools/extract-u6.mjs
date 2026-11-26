@@ -111,7 +111,8 @@ for (let t = 0; t < 0x800; t++) {
 writeFileSync(join(out, 'tiles.png'), png(W * 16, (0x800 / W) * 16, sheet, 4));
 
 // ---------- the rune font: U6.CH is two fonts of 128 characters of 8 x 8, 1 bit a pixel, bit 7 the left; the second
-// is the runes (capitals, and [ \ ] ^ _ for TH EE NG EA ST) and Gargish (lower case), as Nuvie's FontManager loads it.
+// is the runes (capitals, and [ \ ] ^ _ for TH EE NG EA ST) and Gargish (lower case): main.c loads U6.CH
+// whole, and console.c CON_putch0 draws runic text from its upper half (char | 0x80).
 // Written white on transparent, 16 a row, as tools/extract-u5.mjs writes RUNES.CH.
 if (has('U6.CH')) {
   const cs = file('U6.CH').subarray(128 * 8, 256 * 8), w = 16 * 8, h = 8 * 8, px = Buffer.alloc(w * h * 4);

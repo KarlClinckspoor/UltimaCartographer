@@ -15,6 +15,16 @@ export default makeEngine({
   levels: ['Valley of Eodon', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],
   redGates: [],
   objLadder: -1, objRedGate: -1, objEgg: 0xE6,
+  // egg.c EGG_hatches: no hours. How many of each embryo depends on its type: 0x7F and 0xCB make 10-20 piles; 0x143
+  // makes 5-15 on level 1 and its quantity elsewhere (one, after talk flag 1 bit 8); 0x11A, 0x12D and 0x136-0x146 1 to
+  // their quantity (their quantity from an egg of quantity over 100); any other type one. Objects (types under 0x11A)
+  // land up to 3 squares from the egg.
+  eggRules: {
+    count: (r, c) => c.type === 0x7F || c.type === 0xCB ? '10–20' : c.type === 0x143 ? (r.z === 1 ? '5–15' : String(c.qty))
+      : c.type === 0x11A || c.type === 0x12D || (c.type >= 0x136 && c.type <= 0x146) ? (r.qty > 100 || c.qty <= 1 ? String(Math.max(1, c.qty)) : `1–${c.qty}`) : '1',
+    note: c => c.type === 0x143 ? 'only one once a story flag is set' : '',
+    where: 'The first creature appears on the egg and the others near it; objects land up to 3 squares from it.',
+  },
   entranceTypes: [0x14, 0xA3, 0x16, 0xE3, 0x103, 0xA0],
   entrance: r => r.type === 0x14 ? at(T14, r.qual, 1) : r.type === 0xA3 ? at(TA3, r.qual - 101, 2) : r.type === 0x16 ? at(T16, r.qual - 1, r.qual === 8 ? 2 : 0)
     : r.type === 0xE3 ? at(TE3, r.qual - 104, 0) : r.type === 0x103 ? [0xC0, 0x1CC, 0] : r.type === 0xA0 ? [0x9D, 0x89, 3] : null,

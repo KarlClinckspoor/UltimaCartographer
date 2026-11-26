@@ -5,6 +5,7 @@
 // ((x + 1) * 8 - 1 - 4 * lift, (y + 1) * 8 - 1 - 4 * lift) (main/bltshape.c), and objects are painted in the order
 // common/sortitem.c works out.
 import {esc, svgDoc, g, gridSwatch, p, image} from '../../lib/draw.js';
+import {RUNES_PARAM, loadFont, glyph, runicBlock} from '../../lib/runes.js';
 
 const N = 3072, CH = 192;   // tiles and chunks a side
 
@@ -19,7 +20,9 @@ const load = () => loading ||= (async () => {
   const atlasUrl = Array.from({length: meta.pages}, (_, i) => new URL(`atlas-${i}.png`, DATA).href);
   const [map, chunks, frames, objects, contents, ...atlas] = await Promise.all([bin('map.bin'), bin('chunks.bin'), bin('frames.bin'), bin('objects.bin'),
     fetch(new URL('contents.json', DATA)).then(r => r.ok ? r.json() : {}), ...atlasUrl.map(u => image(u))]);
-  const d = {...meta, map: new Uint16Array(map), chunks: new Uint16Array(chunks), fr: new DataView(frames), atlas, atlasUrl, contents};
+  // sign, gravestone and plaque texts and their fonts (tools/extract-u7-signs.mjs)
+  const signs = await fetch(new URL('signs.json', DATA)).then(r => r.ok ? r.json() : (console.warn(`data/${cfg.id}/signs.json is missing: run tools/extract-u7-signs.mjs ${cfg.id}`), {texts: {}, fonts: {}}));
+  const d = {...meta, map: new Uint16Array(map), chunks: new Uint16Array(chunks), fr: new DataView(frames), atlas, atlasUrl, contents, signs};
   // frames.bin lists the frames used, each under shape * 64 + frame: an index from that key to the record (-1 none)
   d.at = new Int32Array(1024 * 64).fill(-1);
   for (let o = 0; o < frames.byteLength; o += 20) d.at[d.fr.getUint32(o, true)] = o + 4;
@@ -320,10 +323,30 @@ function icon(d, sf, px = 18) {
   return `<span class="u7icon" style="width:${(f.w * s).toFixed(1)}px;height:${(f.h * s).toFixed(1)}px;background:url(${d.atlasUrl[f.page]}) ${(-f.ax * s).toFixed(1)}px ${(-f.ay * s).toFixed(1)}px/${(img.naturalWidth * s).toFixed(1)}px ${(img.naturalHeight * s).toFixed(1)}px"></span>`;
 }
 
+// Signs, gravestones and plaques: the lines usecode gives ShowSign_i for the item's shape and quality, drawn in the font
+// of the sign's style (main/signgump.c: 40 characters a line, each centred; the font draws byte c as its frame c). In
+// the Britannian runic fonts lower case is the runes, ( + ) * , the TH EA EE NG ST runes and | a word break (usecode
+// writes "at|(e" for AT THE), upper case Latin capitals. Serpent Isle's translation (signgump.c, once the Avatar can
+// read the script) spells the runes out in capitals; the serpent script's text is in capitals already.
+const DIGRAPH = {'(': 'TH', '+': 'EA', ')': 'EE', '*': 'NG', ',': 'ST'};
+const signText = (d, s, q) => { const t = d.signs.texts[s], l = t && t.lines[q]; return l ? {kind: t.kind, font: t.font, lines: l} : null; };
+const plainLine = l => l.replace(/[(+)*,]/g, c => DIGRAPH[c]).replace(/\|/g, ' ').replace(/@/g, '"').replace(/~/g, '').toUpperCase().trim();
+function signHTML(sg, font) {
+  const said = sg.lines.map(plainLine).join(' / ');
+  if (!font) return `<p class="sign">${sg.lines.map(l => esc(plainLine(l))).join('<br>')}</p>`;
+  const html = sg.lines.map(l => [...l].map(ch => { const c = ch.charCodeAt(0); return c < font.widths.length ? glyph(font, c) : ''; }).join('')).join('<br>');
+  return runicBlock(html, said, [font], 'u7');
+}
+let signList = null;
+const signFeatures = d => signList ||= Array.from(d.obj.sf, (sf, i) => {
+  const sg = signText(d, sf & 0x3FF, d.obj.q[i]);
+  return sg && {name: sg.lines.map(plainLine).join(' ').replace(/\s+/g, ' ').slice(0, 60), x: d.obj.x[i], y: d.obj.y[i], detail: sg.kind};
+}).filter(Boolean);
+
 return {
   id: cfg.id, title: cfg.title, version: 'PC/GOG version. The map, objects and people as they are at the start of a new game.',
   params: [{key: 'cut', label: 'Height cutoff', def: 5, min: 1, max: 16, help: 'Hides objects at this height or above. 5 takes the roofs off most buildings; 16 shows everything.'},
-    {key: 'hour', slider: true, label: 'Hour of the day', def: 12, min: 0, max: 23, help: 'People follow schedules in 3-hour blocks. 0 is midnight.'}],
+    {key: 'hour', slider: true, label: 'Hour of the day', def: 12, min: 0, max: 23, help: 'People follow schedules in 3-hour blocks. 0 is midnight.'}, RUNES_PARAM],
   transient: [], defaultMap: 'world',
   maps() { return [{id: 'world', name: cfg.world}]; },
   async render(mapId, params) {
@@ -331,6 +354,9 @@ return {
     const cut = Math.max(1, Math.min(16, params.cut ?? 5));
     const shown = i => d.obj.z[i] < cut && !(d.obj.fl[i] & 2);
     const hour = Math.max(0, Math.min(23, params.hour ?? 12));
+    // the fonts of the signs, in runes
+    const fonts = {};
+    if (params.runes === 1) for (const [n, f] of Object.entries(d.signs.fonts)) fonts[n] = await loadFont(new URL(`font-${n}.png`, DATA), {...f, scale: 1, hint: `run tools/extract-u7-signs.mjs ${cfg.id}`});
     // the game leaves alone an NPC whose own work is waiting (15), and the dead, the party and the paralysed (status
     // 0x8000, 0x800, 0x1000): they stay where it starts them (decomp main/appts.c); the rest go where their schedule says
     const stays = n => n.wt === 15 || (n.st & 0x9800);
@@ -490,6 +516,8 @@ return {
         const ds = (d.obj.sf[i] >> 10) & 3;
         if (DOORS.has(s) && ds === 2) t += `<br><b>Locked</b> <span class="muted">(lock ${q})</span>.${keyPlaces(q, links)}`;
         if (DOORS.has(s) && ds === 3) t += `<br><b>Magically locked</b> <span class="muted">: no key opens it, only a spell.</span>`;
+        const sg = signText(d, s, q);
+        if (sg) t += signHTML(sg, fonts[sg.font]);
         if (c) t += holds(c);
         return t;
       };
@@ -501,7 +529,7 @@ return {
 
     return {
       title: cfg.world, subtitle: `${cfg.subtitle} · height cutoff ${cut} · ${hh(hour)}`, width: N, height: N, native: 8, draw, cell, coords: cfg.coords, animate: {ms: 100},
-      features: people.map(n => ({name: pname(n), x: n.px, y: n.py, detail: n.act != null ? ACT[n.act] : ''})),
+      features: [...people.map(n => ({name: pname(n), x: n.px, y: n.py, detail: n.act != null ? ACT[n.act] : ''})), ...signFeatures(d)],
       svg: svgDoc(N, N, g('grid', `<path d="${Array.from({length: CH - 1}, (_, i) => `M${(i + 1) * 16} 0V${N}M0 ${(i + 1) * 16}H${N}`).join('')}" stroke="#fff" stroke-width=".5" opacity=".25" fill="none"/>`) + (cfg.overlay ? cfg.overlay.svg() : '')),
       info: `<h3>${cfg.world}</h3><p>3072 × 3072 squares, drawn as you pan, with the game’s ${d.obj.x.length.toLocaleString()} objects as they are at the start of a new game.</p>
         <p>Height cutoff ${cut}: objects at height ${cut} or above are hidden${cut <= 5 ? ', so most roofs are off' : ''}. Click a square to list everything on it and how high it sits.</p>

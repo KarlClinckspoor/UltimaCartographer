@@ -25,6 +25,16 @@ export default makeEngine({
   levels: ['Mars', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'],
   redGates: [],
   objLadder: -1, objRedGate: -1, objEgg: 0x1D2,
+  // egg.c EGG_hatches: quality / 10 is 1 for day eggs (06:00-17:59), 2 for night eggs, 0 any time; quality 100 and
+  // over waits for talk flag 0x46 bit 8 and then matches none of those, so never hatches. Each embryo makes 1 to its
+  // quantity (exactly its quantity from an egg of quantity 100); its status 2 makes the creatures invisible.
+  eggRules: {
+    hours: r => ({1: 'by day only (06:00–17:59)', 2: 'by night only (18:00–05:59)'})[Math.floor(r.qual / 10)],
+    never: r => r.qual >= 100 || Math.floor(r.qual / 10) > 2 ? 'It never hatches: its quality matches none of the game’s hours (a bug of the original; quality 100 and over also waits for a story flag).' : '',
+    count: (r, c) => r.qty === 100 ? String(c.qty) : c.qty <= 1 ? '1' : `1–${c.qty}`,
+    hidden: c => c.status & 2, note: c => c.status & 2 ? 'invisible' : '',
+    where: 'The first creature appears on the egg and the others near it; objects land up to 3 squares from it.',
+  },
   entranceTypes: [0xAF, 0xD2, 0xA3, 0xB2, 0xB4, 0xC5],
   entrance: r => r.type === 0xC5 ? (CHAMBERS[r.qual - 1] ? [...CHAMBERS[r.qual - 1], 0] : null) : ENTRANCES[r.qual - 1] || null,
   bookTypes: [0x94, 0x97, 0xF3], signTypes: [],   // useact1.c UseRead: read from MDTEXT.LZC (quality - 1)

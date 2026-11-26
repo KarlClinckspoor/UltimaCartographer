@@ -145,10 +145,13 @@ body.quill .leaflet-popup, body.quill .leaflet-control { cursor: auto; }
 .leaflet-popup-content .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .pixels-crisp .pixel-tile canvas { image-rendering: pixelated; }
 .sign { font-family: Georgia, serif; letter-spacing: .08em; text-align: center; color: #f1e6c8; background: #2a2418; border: 1px solid #5a4a2a; border-radius: 4px; padding: 4px 8px; }
-/* runic text from the game's rune font (8 x 8 glyphs, 16 a row, tinted; --runes is the sheet), drawn at 2 pixels a pixel */
-.sign.runic { font-size: 16px; line-height: 1.25; letter-spacing: 0; word-spacing: .4em; }
+/* runic text in the game's own font (js/lib/runes.js): glyph sprites sized inline; .rune-line keeps a sign's rows as the game lays them out */
+.sign.runic { line-height: 1.25; letter-spacing: 0; word-spacing: .4em; }
 .sign.runic .rune-word { white-space: nowrap; }
-.sign.runic .rune-glyph { display: inline-block; width: 1em; height: 1em; vertical-align: -.1em; background-image: var(--runes); background-size: 16em 8em; background-repeat: no-repeat; image-rendering: pixelated; }
+.sign.runic .rune-glyph { display: inline-block; vertical-align: middle; background-repeat: no-repeat; image-rendering: pixelated; }
+.sign.runic.grid { display: table; margin-inline: auto; padding: 8px; line-height: 0; }
+.sign.runic .rune-line { display: block; white-space: nowrap; }
+.sign.runic.inline { display: inline-block; padding: 1px 5px; vertical-align: middle; }
 .tag { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 8px; background: var(--panel-2); color: var(--accent); white-space: nowrap; }
 .leaflet-popup-content table { border-collapse: collapse; font-size: 13px; }
 .leaflet-popup-content th { color: var(--muted); text-align: left; vertical-align: top; padding: 2px 8px 2px 0; font-weight: 600; width: 26%; overflow-wrap: anywhere; }

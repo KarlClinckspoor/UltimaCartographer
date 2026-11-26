@@ -101,6 +101,8 @@ offsets u5d's `ultima.c` gives them.
     node tests/u5-data.test.mjs
     node tests/u6-data.test.mjs
     node tests/u7-data.test.mjs
+    node tests/drash-maze.test.mjs  Mt. Drash's generator against mazes dumped from VICE and its C port
+    node tests/runes.test.mjs       every runic character has a glyph in its game's font
     node --test tests/              all of them, and the ones below
 
 `tests/exports.test.mjs` runs the three export checkers (U8, Underworld, U9; the U8 one may fail only
@@ -146,6 +148,18 @@ as small labels in a corner of the cell.
   after a re-seed from the clock, so the page lists what can appear instead of placing them.
 - Towns share 8 layouts and castles 2, as in the game; each town's page shows its own name and shops.
 
+## Escape from Mt. Drash notes
+
+- Sierra's VIC-20 game (1983), sold as "Ultima: Escape from Mt. Drash"; not part of the canon, listed
+  after Ultima I. No game files are shipped: `js/games/drash/drashgen.js` makes each maze in the
+  browser, a port of the decompiled generator (mtdrash's `maze.c` and the part of its Commodore BASIC
+  float model that `RND`, `INT` and `>.8` need), bit for bit.
+- The game never seeds `RND`, so level 1 is the same maze after every power-on. Each later level
+  depends on how many random numbers fights (one, plus one a round) and teleports (two) drew before
+  it; the default is a run with none, and "Extra random numbers drawn" shows other runs.
+- 15 levels: a 5 × 5-cell hunt-and-kill maze, start at (10, 10), exit at (2, 2), keys on levels
+  5–14, `INT((LV+1)/2)+1` monsters; level 15 is a fixed zig-zag.
+
 ## Ultima II notes
 
 - PC/GOG version, CGA palette 1 as the game uses.
@@ -169,6 +183,12 @@ as small labels in a corner of the cell.
   keeper (from the counter-row table the game uses). Squares where Search finds an item are ringed.
 - Dungeon rooms open as their own maps, with foes and triggers. The Shrine of Spirituality has no
   square: in the game's table it shares Humility's, and Enter finds Humility.
+- Ultima IV prints no text in runes: `CHARSET.EGA` holds no rune glyphs (its second half is empty),
+  and the runes appear only as pictures. `tools/extract-u4-pictures.mjs` unpacks all 36 full-screen
+  pictures: the only runes are `RUNE_0`–`RUNE_4` (F, I, N, T, Y), the visions of partial Avatarhood
+  (`U4_SHRIN.C` ShowVision), which spell INFINITY over the eight virtues; `RUNE_5` is the infinity
+  sign of the Codex (`Gra_RevealCodex`). The end game's virtue pictures are lines and circles that
+  build the Codex's sign, and the intro's are tarot-like cards. So it has no Runic text choice.
 
 ## Ultima V notes
 
@@ -178,6 +198,11 @@ as small labels in a corner of the cell.
   they lead to), where they go during the day, and buttons to follow them.
 - Shopkeepers show their shop and keeper from the game's own table (`shopMapIds`); signs show their
   text; squares where Search finds something are ringed, with any condition (keys, once a day).
+- Runic text: In runes draws each sign as `lookobj.c` PrintSignText does, 16 characters a line, a
+  byte with bit 7 set from `IBM.CH` and any other from `RUNES.CH`, whose lower case is the sign's
+  frame (so Blackthorn's laws come out in letters inside a runic frame, and gravestone dates in
+  letters). Words a townsperson says in runes (between `{rune}` codes) are drawn in `RUNES.CH` too;
+  the sextant's reading under the map stays in letters.
 - Dungeons: klimbing up from level 1 leads to Britannia and down from level 8 to the Underworld, at
   the dungeon's square. Hidden pit traps (0x61) look like passages in the game; here they show as grey pits.
   Rooms open as their own maps, with foes, triggers and the doors that lead into them.
@@ -192,13 +217,20 @@ as small labels in a corner of the cell.
 - Objects are as a new game starts, multi-tile ones included. Eggs (hidden spawn points) are not
   drawn themselves; the "Egg spawns, all hatched" layer (on by default) draws what each one holds on
   its square, as if every egg had hatched, and the egg's popup gives the chance, the hours and how
-  many of each (the rules as Nuvie's EggManager has them). Containers list their contents; signs and
+  many of each, each game by its own `egg.c` (`EGG_hatches`, `EGG_hatchArea`): an egg is tried when
+  the game loads its area while you are more than 8 squares away, and not again until you have been
+  more than 20 away (`object.c`). Ultima VI's day eggs run 06:00–18:59, Martian Dreams' 06:00–17:59
+  (and its eggs of quality 100 or more never hatch, a bug of the original); The Savage Empire has no
+  day or night eggs and sets the numbers by creature type. Containers list their contents; signs and
   books show their text; ladders, holes and entrances link to where they lead (U6 by the game's
   coordinate rule, the other two by their entrance tables).
 - Ultima VI's runic text (signs, plaques, gravestones) shows translated or, with "Runic text: In
-  runes", in the game's rune font from `U6.CH` (`data/u6/runes.png`; without it, Ultima V's
-  `RUNES.CH`, the same runes on the same keys, and Gargish stays in letters). `[ ] _ ^ \` are TH,
-  NG, ST, EA, EE; BOOK.DAT also writes `%` just before every `^` and `\`, which adds no letter.
+  runes", in the game's own font: the upper half of `U6.CH` (`data/u6/runes.png`), runes in capitals
+  and Gargish in lower case. `[ ] _ ^ \` are TH, NG, ST, EA, EE. The game prints BOOK.DAT through its
+  `printf` (`objcmd.c` PrintBookText, `console.c` CON_printf), where `%` and a character print that
+  character as it is: `%\` and `%^` are how a sign gets the EE and EA runes, which `CON_putch` would
+  otherwise read as escapes. `&` marks the translation under a Gargish sign, printed only once you
+  speak Gargish; the popup shows it under the runes. `@` (a keyword) and `` ` `` print nothing.
 - People stand where their schedule puts them at the chosen hour; their popup has their day, what
   they carry and their conversation, condensed from each decompilation's `dialogue.json`
   (keywords and answers; "depends" marks answers that change with the story).
@@ -222,6 +254,13 @@ as small labels in a corner of the cell.
   (3-hour periods); their popups list their day with buttons to follow them.
 - The draw order is simple (lift, then distance), so some overlaps differ from the game. Formats
   as Exult reads them (gamemap.cc, actorio.cc, readnpcs.cc, shapes/vgafile.cc).
+- Signs, gravestones and plaques show their text (and are in search), from the decompiled usecode
+  (`tools/extract-u7-signs.mjs`): the routine numbered as the item's shape gives `ShowSign_i` its
+  lines by the item's quality. With Runic text: In runes they are drawn in the font of the sign's
+  style (`main/signgump.c`), from `FONTS.VGA`: fonts 1, 3 and 6 (Britannian runes in lower case, `( +
+  ) * ,` the TH EA EE NG ST runes, Latin capitals in upper case), and in Serpent Isle font 10 for the
+  serpent plaques, the serpent script. Apostrophes, `? ! &`, `@` and `~` have no glyph in those
+  fonts, so the game leaves a gap.
 
 ## Ultima VIII notes
 

@@ -2,6 +2,7 @@
 // grid tile at a time, from the game's own chunk map and object blocks (data/<game>, by
 // tools/extract-u6.mjs). Formats and rules: u6-decompiled SRC (map.c, object.c, npctrack.c, objcmd.c).
 import {esc, g, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, image} from '../../lib/draw.js';
+import {RUNES_PARAM, loadFont, words, runicBlock} from '../../lib/runes.js';
 
 const DOUBLE_H = 0x40, DOUBLE_W = 0x80, BACKGROUND = 0x20, FOREGROUND = 0x10;   // TileFlag / TileFlag2 bits (u6.h)
 const LOCXYZ = 0, CONTAINED = 8, INVISIBLE = 2;
@@ -156,11 +157,12 @@ export function makeEngine(cfg) {
       if (use === LOCXYZ) { if (r.z <= 5) { d.objs[r.z].push(r); place(d, r); } }
       else if (use !== CONTAINED) { if (!d.inventory.has(r.assoc)) d.inventory.set(r.assoc, []); d.inventory.get(r.assoc).push(r); }
     }
-    // What every egg would hatch, standing on the egg's square (the first of a kind hatches there; Nuvie's EggManager
-    // tosses the rest within a few squares): each embryo once, in the egg's order.
+    // What every egg would hatch, each embryo once, in the egg's order, on the egg's square: egg.c EGG_hatches makes
+    // the first creature there and moves the others near it (cfg.eggRules says how far), so this marks where they come.
+    // An embryo that hatches invisible creatures (cfg.eggRules.hidden) is listed but not drawn.
     for (const z of [0, 1, 2, 3, 4, 5]) for (const r of d.objs[z]) {
       if (r.type !== cfg.objEgg || !r.contents) continue;
-      for (const c of r.contents) if (!(c.status & INVISIBLE)) place(d, {...c, x: r.x, y: r.y, z, contents: undefined, egg: r}, d.spawnAt);
+      for (const c of r.contents) if (!cfg.eggRules.hidden?.(c)) place(d, {...c, x: r.x, y: r.y, z, contents: undefined, egg: r}, d.spawnAt);
     }
     // NPCs 1-FFh with a shape
     d.npcs = [];
@@ -227,19 +229,18 @@ export function makeEngine(cfg) {
     return `<span class="item-icon" aria-hidden="true" style="background-image:url('${d.sheet.src}');background-size:3200% ${rows * 100}%;` +
       `background-position:${(t % 32) / 31 * 100}% ${(t >> 5) / (rows - 1) * 100}%"></span>`;
   }
-  // An egg: a hidden spawn point. Its rules as Nuvie (ScummVM) implements them for all three games, in EggManager
-  // spawn_eggs and spawn_egg: it is checked once each time you come within 20 squares of it (from farther than 8,
-  // so not when it is already in view), hatching if 1-100 at random is at most its quantity (100 or more: always);
-  // its quality says when (under 10 any time, 10-19 by day, 06:00-18:59, 20-29 by night, 30 on any time); each
-  // embryo inside hatches 1 to its quantity at random, or exactly its quantity from an egg of quantity 100
-  // (Ultima VI's silver serpent only ever one).
+  // An egg: a hidden spawn point (egg.c in each decompilation). EGG_hatchArea tries the eggs of the 40 x 40 area the
+  // game loads around you, those more than 8 squares from you; EGG_hatches hatches one if 1-100 at random is at most
+  // its quantity, then marks it hatched whatever the result, and object.c OBJ_PurgeFarLocals clears the mark once you
+  // are more than 20 squares away. The hours, how many of each embryo and where they go differ: cfg.eggRules.
   function eggLine(d, r) {
-    const when = r.qual < 10 || r.qual >= 30 ? 'at any hour' : r.qual < 20 ? 'by day only (06:00–18:59)' : 'by night only (19:00–05:59)';
-    const chance = r.qty >= 100 ? 'every time' : `${r.qty}% of the times`;
-    const count = c => cfg.id === 'u6' && c.type === 0x19D ? '1' : r.qty === 100 || c.qty <= 1 ? String(Math.max(1, c.qty)) : `1–${c.qty}`;
-    const kids = (r.contents || []).map(c => `<li>${icon(d, c)}${esc(oname(d, c))} ×${count(c)}${c.status & INVISIBLE ? ' <span class="muted">(invisible)</span>' : ''}</li>`).join('');
-    return `${icon(d, r)}${esc(oname(d, r))} <span class="muted">(a hidden spawn point)</span>` +
-      (kids ? `<p class="muted">Hatches ${chance} you come within 20 squares of it, ${when}:</p><ul>${kids}</ul>` : '<p class="muted">It holds nothing, so nothing hatches.</p>');
+    const R = cfg.eggRules, when = R.hours?.(r) || '', chance = r.qty >= 100 ? 'every time' : `${r.qty}% of the times`;
+    const kids = (r.contents || []).map(c => `<li>${icon(d, c)}${esc(oname(d, c))} ×${R.count(r, c)}${R.note?.(c) ? ` <span class="muted">(${R.note(c)})</span>` : ''}</li>`).join('');
+    const never = R.never?.(r);
+    return `${icon(d, r)}${esc(oname(d, r))} <span class="muted">(a hidden spawn point)</span>` + (!kids ? '<p class="muted">It holds nothing, so nothing hatches.</p>'
+      : never ? `<p class="muted">${never}</p><ul>${kids}</ul>`
+      : `<p class="muted">It hatches ${chance} the game loads its area while you are more than 8 squares away${R.inView?.(r) ? ' (this one even when you are nearer)' : ''}${when ? `, ${when}` : ''}, ` +
+        `then not again until you have been more than 20 squares away. ${R.where}</p><ul>${kids}</ul>`);
   }
   function itemLine(d, r, depth = 0) {
     if (r.type === cfg.objEgg) return eggLine(d, r);
@@ -250,66 +251,52 @@ export function makeEngine(cfg) {
     if (r.contents && depth < 3) s += `<ul>${r.contents.map(c => `<li>${itemLine(d, c, depth + 1)}</li>`).join('')}</ul>`;
     return s;
   }
-  // Text between < and > is in runes, where [ ] _ ^ \ stand for TH, NG, ST, EA, EE (the street signs: <BELLRI]ER LANE>);
-  // lower case inside them is Gargish. & breaks a line. Ultima VI's BOOK.DAT also writes % just before every ^ and \
-  // (D%^[ is DEATH, SW%\PERS SWEEPERS; 15 times, never anywhere else): it adds no letter, so the translation drops it.
-  const translit = r => r.replace(/%/g, '').replace(/\[/g, 'TH').replace(/\]/g, 'NG').replace(/_/g, 'ST').replace(/\^/g, 'EA').replace(/\\/g, 'EE');
-  const runes = t => t.replace(/<([^>]*)>/g, (m, r) => /[a-z]/.test(r) ? `‹${r}›` : translit(r));
-  const isReadable = r => (cfg.bookTypes.includes(r.type) || cfg.signTypes.includes(r.type)) && r.qual > 0;
-  const plainHTML = t => esc(runes(t)).replace(/&amp;|\*/g, '<br>').replace(/\n/g, '<br>');
-  const bookHTML = (d, r, font) => {
-    const t = d.books[r.qual - 1];
-    if (!t) return '';
-    if (!font || !/<[^>]*>/.test(t)) return `<p class="sign">${plainHTML(t)}</p>`;
-    const said = runes(t).replace(/[*&\n]/g, ' ').replace(/\s+/g, ' ').trim();
-    return `<p class="sign runic" role="img" aria-label="${esc(said)}" title="${esc(said)}" style="--runes:url('${font.url}')">${runicHTML(t, font)}</p>`;
-  };
-
-  // Runic text drawn in the game's rune font: U6.CH's second half (data/u6/runes.png, written by tools/extract-u6.mjs),
-  // or, without it, Ultima V's RUNES.CH, the same runes on the same keys (data/u5/font1.png), which has no Gargish.
-  // A character whose glyph is blank in the font is written as itself, except % (see translit), which is left out.
-  let runeFont = null;
-  const loadRunes = () => runeFont ||= (async () => {
-    let img, own = true;
-    try { img = await image(new URL('runes.png', DATA)); }
-    catch {
-      own = false;
-      console.warn(`data/${cfg.id}/runes.png is missing: run tools/extract-u6.mjs (until then the runes are Ultima V's)`);
-      img = await image(new URL('../u5/font1.png', DATA));
-    }
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const a = ctx.getImageData(0, 0, c.width, c.height).data, blank = new Uint8Array(128);
-    for (let ch = 0; ch < 128; ch++) {
-      let any = false;
-      for (let y = 0; y < 8 && !any; y++) for (let x = 0; x < 8; x++) if (a[(((ch >> 4) * 8 + y) * c.width + (ch & 15) * 8 + x) * 4 + 3]) { any = true; break; }
-      blank[ch] = !any;
-    }
-    ctx.globalCompositeOperation = 'source-in'; ctx.fillStyle = '#f1e6c8'; ctx.fillRect(0, 0, c.width, c.height);
-    return {url: c.toDataURL(), blank, gargish: own};
-  })();
-  function runicHTML(t, font) {
-    const glyph = ch => `<span class="rune-glyph" style="background-position:-${ch & 15}em -${ch >> 4}em"></span>`;
-    let out = '';
-    for (const [, plain, rune] of t.matchAll(/([^<]*)(?:<([^>]*)>)?/g)) {
-      if (plain) out += plainHTML(plain);
-      if (rune == null) continue;
-      if (/[a-z]/.test(rune) && !font.gargish) { out += esc(`‹${rune}›`); continue; }
-      out += rune.split(/( +)/).map(w => {
-        if (/^ *$/.test(w)) return w ? ' ' : '';
-        let s = '';
-        for (const ch of w) {
-          const c = ch.charCodeAt(0);
-          if (c < 128 && !font.blank[c]) s += glyph(c);
-          else if (ch !== '%') s += esc(ch);
-        }
-        return `<span class="rune-word">${s}</span>`;
-      }).join('');
+  // A book's or sign's text as the game prints it. objcmd.c PrintBookText hands BOOK.DAT's text to console.c CON_printf,
+  // where % and a character print that character as it is (an unknown conversion): that is how %\ and %^ put the EE and
+  // EA runes on a sign, since CON_putch takes a bare \ or ^ as an escape (SW%\PERS is SWEEPERS, D%^[ DEATH). Then
+  // CON_putch: < and > begin and end the runic font, the upper half of U6.CH (char | 0x80), where [ \ ] ^ _ are the TH,
+  // EE, NG, EA and ST runes and lower case is Gargish; & begins and ends a part printed only once you speak Gargish
+  // (the translation under each Gargish sign); @ marks a keyword (not printed); ` capitalises the next letter; * waits
+  // for a key. Returns runs of {text, runic, gargish}.
+  function parse(t) {
+    const out = [];
+    let runic = false, gargish = false, cap = false, cur = null;
+    const put = ch => {
+      if (cap) { ch = ch.toUpperCase(); cap = false; }
+      if (!cur || cur.runic !== runic || cur.gargish !== gargish) out.push(cur = {text: '', runic, gargish});
+      cur.text += ch;
+    };
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (ch === '%' && i + 1 < t.length) put(t[++i]);
+      else if (ch === '<') runic = true;
+      else if (ch === '>') runic = false;
+      else if (ch === '&') gargish = !gargish;
+      else if (ch === '`') cap = true;
+      else if (ch === '*') put('\n');
+      else if (ch !== '@') put(ch);
     }
     return out;
   }
+  const translit = r => r.replace(/\[/g, 'TH').replace(/\]/g, 'NG').replace(/_/g, 'ST').replace(/\^/g, 'EA').replace(/\\/g, 'EE');
+  const plainRun = s => s.runic ? (/[a-z]/.test(s.text) ? `‹${s.text}›` : translit(s.text)) : s.text;
+  const plainText = t => parse(t).map(plainRun).join('');
+  const oneLine = s => s.replace(/\s+/g, ' ').trim();
+  const lines = s => esc(s).replace(/^\n+|\n+$/g, '').replace(/\n/g, '<br>');
+  const isReadable = r => (cfg.bookTypes.includes(r.type) || cfg.signTypes.includes(r.type)) && r.qual > 0;
+  // In runes: the runic parts in U6.CH's runes and Gargish, the rest in letters; what only a Gargish speaker reads is
+  // given below the sign.
+  const bookHTML = (d, r, font) => {
+    const t = d.books[r.qual - 1];
+    if (!t) return '';
+    const runs = parse(t);
+    if (!font || !runs.some(s => s.runic)) return `<p class="sign">${lines(runs.map(plainRun).join(''))}</p>`;
+    const shown = runs.filter(s => !s.gargish), known = runs.filter(s => s.gargish).map(s => s.text).join('');
+    const html = shown.map(s => s.runic ? s.text.split('\n').map(l => words(font, l)).join('<br>') : esc(s.text).replace(/\n/g, '<br>')).join('').replace(/^(<br>)+|(<br>)+$/g, '');
+    return runicBlock(html, oneLine(shown.map(plainRun).join('')), [font]) +
+      (oneLine(known) ? p(`<span class="muted">Once you speak Gargish the game adds: ${esc(oneLine(known))}</span>`) : '');
+  };
+  const loadRunes = () => loadFont(new URL('runes.png', DATA), {hint: `run tools/extract-u6.mjs ${cfg.id} <game folder>`});
 
   function fmtTalk(s) {
     if (cfg.ampQuote) s = s.replace(/&/g, '”');   // Martian Dreams writes a closing quote as &
@@ -464,7 +451,7 @@ export function makeEngine(cfg) {
       }
       if (cfg.signTypes.includes(r.type) && r.qual && d.books[r.qual - 1]) {
         parts.signs += ring(r.x, r.y, '#f4efe0', '.12 .08', .1);
-        features.push({name: runes(d.books[r.qual - 1]).replace(/[*&\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60), x: r.x, y: r.y, detail: 'sign'});
+        features.push({name: oneLine(plainText(d.books[r.qual - 1])).slice(0, 60), x: r.x, y: r.y, detail: 'sign'});
       }
       if (r.type === cfg.objRedGate && r.qual) features.push({name: 'Red moongate', x: r.x, y: r.y, detail: 'gate'});
       if (r.type === cfg.objEgg && r.contents) eggFeatures.push({name: `Egg: ${[...new Set(r.contents.map(c => oname(d, c)))].join(', ')}`, x: r.x, y: r.y, detail: 'spawn point'});
@@ -547,8 +534,7 @@ export function makeEngine(cfg) {
   return {
     id: cfg.id, title: cfg.title, version: cfg.version,
     params: [{key: 'hour', slider: true, label: 'Hour of the day', def: cfg.startHour, min: 0, max: 23, help: 'People keep daily schedules. 0 is midnight.'},
-      ...(cfg.runes ? [{key: 'runes', label: 'Runic text', options: [[0, 'Translated'], [1, 'In runes']], def: 0, min: 0, max: 1,
-        help: 'Signs, plaques and gravestones written in runes: as the game draws them (hover for the translation), or in letters.'}] : [])],
+      ...(cfg.runes ? [RUNES_PARAM] : [])],
     transient: [], defaultMap: 'L0',
     maps() { return cfg.levels.map((name, z) => ({id: `L${z}`, name})); },
     render,

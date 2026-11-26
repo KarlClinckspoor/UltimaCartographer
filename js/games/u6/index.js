@@ -27,6 +27,17 @@ export default makeEngine({
   dungeonNames: DUNGEONS,
   dungeonName: q => q < 8 ? `Dungeon ${DUNGEONS[q - 1]}` : q === 8 ? 'The Great Stygian Abyss' : q <= 11 ? `Shrine of ${DUNGEONS[q - 1]}` : DUNGEONS[q - 1],
   objLadder: 0x131, objRedGate: 0x054, objEgg: 0x14F,
+  // egg.c EGG_hatches: quality / 10 is 1 for day eggs (06:00-18:59), 2 for night eggs, anything else any time; each
+  // embryo makes 1 to its quantity, exactly its quantity from an egg of quantity 100, one silver serpent (0x19D) whose
+  // quantity is its length; a mutant embryo (status 0x40) two-headed creatures. EGG_hatchArea also hatches a "local"
+  // egg (status 0x20) in view.
+  eggRules: {
+    hours: r => ({1: 'by day only (06:00–18:59)', 2: 'by night only (19:00–05:59)'})[Math.floor(r.qual / 10)],
+    count: (r, c) => c.type === 0x19D ? '1' : ((r, c) => r.qty === 100 ? String(c.qty) : c.qty <= 1 ? '1' : `1–${c.qty}`)(r, c),
+    note: c => c.type === 0x19D ? `${c.qty + 1} body segments` : c.status & 0x40 ? 'two-headed' : '',
+    inView: r => r.status & 0x20,
+    where: 'The first creature appears on the egg; the others are moved to free squares near it, out of your sight.',
+  },
   entranceTypes: [0x134, 0x146],   // OBJ_HOLE, OBJ_MINE_SHAFT
   bookTypes: [0x097, 0x03D, 0x098, 0x10E, 0x03B],   // objcmd.c BookTypes: book, Book of Circles, note, balloon plans, Codex
   signTypes: [0x14C, 0x14D, 0x08F, 0x0FE, 0x0FF],   // SignTypes: sign, gargoyle sign, picture, cross, tombstone

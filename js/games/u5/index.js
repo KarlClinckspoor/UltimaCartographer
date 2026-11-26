@@ -1,6 +1,7 @@
 // Ultima V: Britannia and the Underworld, the 32 settlements floor by floor, the 8 dungeons and their
 // rooms, from the game files (data/u5, by tools/extract-u5.mjs). Townsfolk stand where their schedule
 // puts them at the hour chosen, and show their whole conversation. Game logic: u5-decompiled/u5d/src.
+import {RUNES_PARAM, loadFont, glyph as runeGlyph, words, runicBlock} from '../../lib/runes.js';
 import {placeLabels, esc, g, rect, path, svgDoc, swatch, ring, label, gridLines, gridSwatch, p, canvas, image, json, tileLayer, rnd, chain} from '../../lib/draw.js';
 
 const DATA = new URL('../../../data/u5/', import.meta.url);
@@ -186,13 +187,39 @@ function itemText(d, h) {
 }
 const hiddenAt = (d, loc, floor) => d.hidden.map((h, i) => ({...h, i})).filter(h => h.loc === loc && h.floor === floor);
 const searchHTML = (d, list) => list.map(h => p(`<b>Search here: ${esc(itemText(d, h))}.</b> ${ENTRY_RULE[h.i] || 'Once.'}`)).join('');
-const signHTML = s => `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>`;
+// Runic text in Ultima V's own fonts, when the Runic text choice is In runes: IBM.CH (data/u5/font0.png) and RUNES.CH
+// (font1.png), as the game draws them. Set by render().
+let runeFonts = null;
+const loadRuneFonts = () => Promise.all(['font0.png', 'font1.png'].map(n => loadFont(new URL(n, DATA), {hint: 'run tools/extract-u5.mjs <game folder>'})))
+  .then(fs => fs.every(Boolean) ? fs : null);
+// A sign as lookobj.c PrintSignText prints it, 16 characters a line: a byte with bit 7 set from IBM.CH, any other from
+// RUNES.CH (whose lower case draws the frame); & and ' are the frame's line (l); ) * + , - . / 0 1 stand for the pictures
+// of lookPictures (tombstone tops and bottoms), drawn in RUNES.CH; a carriage return waits for a key.
+const LOOK_PICTURES = ['g              g', 'jlllllllnllllllk', '8lllllllmllllll9', 'jllllllllllllllk', '8llllllllllllll9', 'hllllk    jlllli', 'jlllli    hllllk', '     g    g     ', '     hlllli     '];
+function signGrid(raw, [ibm, runes]) {
+  const rows = [[]];
+  const put = (f, c) => { if (c === 10) { rows.push([]); return; } if (rows.at(-1).length === 16) rows.push([]); rows.at(-1).push(runeGlyph(f, c)); };
+  for (const ch of raw) {
+    const code = ch.charCodeAt(0), f = code & 0x80 ? ibm : runes;
+    if (code === 0x26 || code === 0x27) put(f, 0x6c);
+    else if (code >= 0x29 && code <= 0x31) for (const c of LOOK_PICTURES[code - 0x29]) put(runes, c.charCodeAt(0));
+    else if (code !== 0xd) put(f, code & 0x7f);
+  }
+  while (rows.length && !rows.at(-1).length) rows.pop();
+  return rows.map(r => `<span class="rune-line">${r.join('')}</span>`).join('');
+}
+const signHTML = s => runeFonts && s.raw ? runicBlock(signGrid(s.raw, runeFonts), s.text.replace(/\n/g, ' '), runeFonts, 'grid')
+  : `<p class="sign">${esc(s.text).replace(/\n/g, '<br>')}</p>`;
+// Words the game prints in runes in a conversation, between two {rune} codes (0x8E), on the same keys as the signs.
+const RUNE_KEY = {TH: '[', EA: '^', ST: '_', NG: ']', EE: '\\'};
+const runeWords = t => !runeFonts ? `<span class="tag">in runes</span> ${t.trim()}`
+  : `<span class="sign runic inline" title="${t.trim()}" style="${runeFonts[1].v}:url('${runeFonts[1].url}')">${words(runeFonts[1], t.trim().replace(/TH|EA|ST|NG|EE/g, m => RUNE_KEY[m]))}</span>`;
 
 // ---------- Britannia and the Underworld ----------
 
 // The sextant's reading (cast2.c CAST2_06ec: the sextant, outdoors in Britannia at night, and In Wis): latitude from y, longitude from x, each as two letters, the high
 // and low nibble, A for 0;
-// the game prints them in runes.
+// the game prints them in runes. The coordinate read-out under the map stays in letters.
 export const sextant = (x, y) => { const L = v => String.fromCharCode(65 + v); return `latitude ${L(y >> 4)}'${L(y & 15)}", longitude ${L(x >> 4)}'${L(x & 15)}"`; };
 async function renderBig(d, under) {
   const W = 256, bytes = under ? d.underBytes : d.britBytes, floor = under ? -1 : 0;
@@ -265,7 +292,7 @@ function talkHTML(sc) {
     .replace(/\{give (\d+)\}/g, '<span class="tag">gives something</span> ').replace(/\{karma\+\}/g, '<span class="tag">karma +1</span> ').replace(/\{karma-\}/g, '<span class="tag">karma −1</span> ')
     .replace(/\{guards\}/g, '<span class="tag">calls the guards</span> ').replace(/\{join\}/g, '<span class="tag">joins you</span> ').replace(/\{askname\}/g, '<span class="tag">asks your name</span> ')
     .replace(/\{ifknown\}\{label (\d+)\}/g, (m, n) => `<span class="tag">if they know your name: Q${+n + 1}</span> `).replace(/\{label (\d+)\}/g, (m, n) => `<span class="tag">→ Q${+n + 1}</span> `)
-    .replace(/\{end\}/g, '<span class="tag">ends the talk</span>').replace(/\{rune\}/g, '<span class="tag">in runes</span> ')
+    .replace(/\{end\}/g, '<span class="tag">ends the talk</span>').replace(/\{rune\}([^{]*)\{rune\}/g, (m, t) => runeWords(t)).replace(/\{rune\}/g, '<span class="tag">in runes</span> ')
     .replace(/\{[a-z+\- 0-9]+\}/g, ' ').replace(/\s+/g, ' ').trim();
   const row = (k, v) => v ? `<tr><th>${esc(k)}</th><td>${fmt(v)}</td></tr>` : '';
   let h = `<table>${row('Look', sc.look)}${row('Hello', sc.greeting)}${row('Job', sc.job)}${row('Bye', sc.bye)}${sc.qa.map(q => row(q.k.join(', '), q.a)).join('')}</table>`;
@@ -479,7 +506,7 @@ let meta = null;
 export default {
   id: 'u5', title: 'Ultima V', version: 'PC/GOG version. Every map is read from the game files.',
   params: [{key: 'hour', slider: true, label: 'Hour of the day (towns)', def: 12, min: 0, max: 23,
-    help: 'Townsfolk keep a daily schedule of up to three places. 0 is midnight.'}],
+    help: 'Townsfolk keep a daily schedule of up to three places. 0 is midnight.'}, RUNES_PARAM],
   transient: [], defaultMap: 'brit',
   maps(params, mapId) {
     const list = [{id: 'brit', name: 'Britannia'}, {id: 'under', name: 'The Underworld'}];
@@ -500,6 +527,7 @@ export default {
   async render(mapId, params) {
     const d = await load();
     meta = d;
+    runeFonts = params.runes === 1 ? await loadRuneFonts() : null;
     const hour = Math.max(0, Math.min(23, params.hour ?? 12));
     let m;
     if ((m = /^D(\d)-room-(\d+)$/.exec(mapId || '')) && +m[1] < 8 && +m[1] !== 1 && +m[2] < 16) return renderRoom(d, +m[1], +m[2]);

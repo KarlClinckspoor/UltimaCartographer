@@ -184,6 +184,7 @@ for (const f of FILES) {
 }
 
 // ---------- signs: SIGNS.DAT records (place, floor, x, y, text), plus the Sign of Eight Laws kept in DATA.OVL ----------
+// text is the sign in letters; raw keeps its bytes as lookobj.c PrintSignText prints them (js/games/u5/index.js draws them).
 const DIGRAPH = {'@': ' ', '[': 'TH', '^': 'EA', _: 'ST', ']': 'NG', '\\': 'EE'};
 const scrub = raw => { let s = '', prev = ''; for (const ch of raw) { const c = ch.charCodeAt(0); if ((ch >= 'A' && ch <= 'Z') || ch === ' ') s += ch; else if (ch in DIGRAPH) s += DIGRAPH[ch]; else if (ch === 'g' && prev === 'g') s += '\n'; else if (c > 127) s += String.fromCharCode(c - 128); prev = ch; } return s.replace(/[ \t]+/g, ' ').split('\n').map(l => l.trim()).filter(Boolean).join('\n'); };
 const signs = [];
@@ -195,12 +196,13 @@ const signs = [];
     let text = cstr(b, o + 4);
     const len = text.length;
     if (!text.trim()) text = cstr(b, o + 4 + len + 1 + 4);
-    signs.push({loc, floor: floor > 127 ? floor - 256 : floor, x, y, text: scrub(text)});
+    signs.push({loc, floor: floor > 127 ? floor - 256 : floor, x, y, text: scrub(text), raw: text});
     o += 4 + len + 1;
   }
   // Its text has a 0 byte after the first line: read on to the second.
   const laws = ovl.indexOf(0, ovl.indexOf(0, 0x743A) + 1);
-  signs.push({loc: 32, floor: 0, x: 15, y: 19, text: scrub(ovl.subarray(0x743A, laws).toString('latin1'))});
+  const lawsRaw = ovl.subarray(0x743A, laws).toString('latin1').replace(/\0/g, '');
+  signs.push({loc: 32, floor: 0, x: 15, y: 19, text: scrub(lawsRaw), raw: lawsRaw});
 }
 
 // ---------- dungeons: 8 x 8 levels of 8 x 8; rooms (DUNGEON.CBT): 16 for each dungeon but Despise, 11 rows of 32 bytes ----------

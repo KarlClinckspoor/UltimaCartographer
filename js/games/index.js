@@ -13,12 +13,14 @@ import u7si from './u7si/index.js';
 import u8 from './u8/index.js';
 import uw1 from './uw1/index.js';
 import uw2 from './uw2/index.js';
+import drash from './drash/index.js';
 
 // In the order of the story (the canon timeline), not of release. A game with `href` is a page of its own (the 3D
 // viewers): choosing it opens that page.
 export const GAMES = [
   u0,
   u1,
+  drash,   // not canon: Sierra's VIC-20 game (1983), sold as "Ultima: Escape from Mt. Drash"
   u2,
   u3,
   u4,
