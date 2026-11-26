@@ -14,8 +14,9 @@ font (tasks 2–3). Ultima IV, V and VII are task 6.
   - At load, every egg's contents (embryos) are placed on the egg's square in `d.spawnAt[z]`, one of each
     embryo, invisible ones (status bit 2) skipped. They are drawn after the people on the square, as layer
     `spawns` ("Egg spawns, all hatched"), on by default, in the far-out average-colour view too.
-  - `eggLine()` writes the egg's popup: chance, hours, and how many of each embryo. **These rules come from
-    Nuvie (ScummVM `engines/ultima/nuvie/core/egg_manager.cpp`), not from the decompilations.** See task 4.
+  - `eggLine()` writes the egg's popup: chance, hours, and how many of each embryo. **The cloud session took
+    these rules from Nuvie, which this project must not rely on.** Task 4 replaces them with what the
+    decompilations say.
   - Search finds eggs ("Egg: Drake"), listed after the people.
   - Runes: `translit()` drops `%` (BOOK.DAT writes it just before every `^` EA and `\` EE, 15 times in all,
     never elsewhere). New `runes` param for Ultima VI (`cfg.runes` in `js/games/u6/index.js`): 0 Translated
@@ -25,7 +26,14 @@ font (tasks 2–3). Ultima IV, V and VII are task 6.
     is left out. The translation is the paragraph's `title` and `aria-label`.
 - `tools/extract-u6.mjs`: writes `data/<game>/runes.png` from the second half of `U6.CH` (128 glyphs of 8 × 8,
   16 a row, white on transparent, the layout `extract-u5.mjs` uses for RUNES.CH). Not run yet: no game files
-  in the cloud.
+  in the cloud. Its comment says Nuvie loads the file this way; task 2 confirms the layout from the
+  decompilation instead.
+
+**Rule for everything below: work only from the decompilations listed in the README's credits (u4-decompiled
+through its port, u5d, u6-decompiled, u6se- and u6md-decompiled, Ultima7_Decomp). Do not use Nuvie, Exult or
+ScummVM, and remove the Nuvie references the cloud session added** (the comments in `js/games/u6/engine.js`
+and `tools/extract-u6.mjs`, and the README's U6-engine notes). Check against the running game in DOSBox
+where it helps.
 - `js/app.js`: `cell(x, y, at, off)` is now given the Set of layers switched off.
 - `css/site.css`: `.sign.runic`, `.rune-word`, `.rune-glyph`.
 - `tests/u6-data.test.mjs`: checks the `%` pattern and that the egg at 569, 340 holds a drake.
@@ -41,6 +49,9 @@ font (tasks 2–3). Ultima IV, V and VII are task 6.
 
     node tools/extract-u6.mjs u6 "C:/GOG Games/Ultima 6" ../u6-decompiled/dialogue.json
 
+- Before trusting the output, confirm in `../u6-decompiled` (the font loading and text drawing code) that
+  `U6.CH` really is two fonts of 128 8 × 8 glyphs with the runes and Gargish in the second. Fix the extractor
+  if it isn't, and replace the Nuvie reference in its comment with the decomp's function.
 - Expect a new `data/u6/runes.png`, 128 × 64. Open it: capitals should be runes, `[ \ ] ^ _` the TH, EE,
   NG, EA, ST runes, lower case the Gargish letters.
 - Nothing else in `data/u6` should change. If `u6.json` or the `.bin` files differ, find out why before
@@ -66,9 +77,9 @@ the game does with it:
   - **Something that changes the next glyph (wider, joined):** change `runicHTML` to match, and say so in the
     README's U6-engine notes, which currently say `%` "adds no letter".
 
-### 4. Check the egg rules against the decompilations
+### 4. Take the egg rules from the decompilations
 
-`eggLine()` currently states, for all three games:
+`eggLine()` currently states, for all three games, rules taken from Nuvie. Treat them as unverified guesses:
 
 - An egg is checked once each time you come within 20 squares of it, approaching from farther than 8.
 - It hatches if a random 1–100 is at most its quantity; a quantity of 100 or more always hatches.
@@ -77,9 +88,11 @@ the game does with it:
 - Each embryo hatches 1 to its quantity at random, or exactly its quantity when the egg's quantity is 100.
   Ultima VI's silver serpent (0x19D) hatches only one.
 
-Check each of these in `../u6-decompiled/SRC` (egg.c, and wherever it is called from the game loop), then in
-`../u6se-decompiled` and `../u6md-decompiled` (their `js/games/se/index.js` and `md/index.js` headers
-already cite their egg.c). Look closely at what the cloud session could not explain:
+Read the egg code in `../u6-decompiled/SRC` (egg.c, and where the game loop calls it), then in
+`../u6se-decompiled` and `../u6md-decompiled` (the headers of `js/games/se/index.js` and `md/index.js`
+already cite their egg.c). Write `eggLine()` from what that code does, rule by rule: keep, change or drop
+each of the above, and add anything the code does that the list misses. Also check whether the map should
+draw one of each embryo or more, and where. Look closely at what the cloud session could not explain:
 
 - SE egg quantities 0, 2, 201 and 255; MD egg qualities 100 and 104; MD embryo qualities up to 27.
 - Status bits: one U6 egg has status 0x20; some embryos have 0x20 or 0x40 set. Do any eggs hatch only once,
@@ -88,8 +101,9 @@ already cite their egg.c). Look closely at what the cloud session could not expl
   embryo on the egg's square.
 
 If a game differs, give that game's config its own rules (for example a `cfg.eggRules(egg, embryo)` returning
-the sentences, defined in its `index.js`) instead of branching on `cfg.id` inside the engine. Change the
-comment above `eggLine` to cite the decomp's functions instead of Nuvie wherever they agree.
+the sentences, defined in its `index.js`) instead of branching on `cfg.id` inside the engine. The comments
+above `eggLine` and at the spawn placement in `load()`, and the README's U6-engine notes, should cite the
+decompilations' files and functions only, as the rest of the engine does.
 
 ### 5. Look at it in the browser
 
@@ -141,17 +155,20 @@ and logs how to extract the font.
 **Ultima VII (The Black Gate and Serpent Isle)**
 - The U7 module (`js/games/u7/engine.js`, `tools/extract-u7.mjs`) shows no sign, plaque, gravestone or book
   text yet, so this is new work for both games.
-- Find where the texts are kept. They are in USECODE, shown with the sign gump through the usecode
-  intrinsic that displays runes. Exult's source (`gumps/` sign/text gumps and the usecode intrinsics) and
-  Exult's docs say which intrinsic it is, which shapes are signs, plaques, gravestones and books, and how
-  each item's quality or frame picks its text. Extract the texts per game into `u7bg.json` and `u7si.json`.
-- Fonts: `FONTS.VGA` in each game's `STATIC` folder. Find which font number is the runic one, and the
-  Serpent Isle equivalent (it may differ, and SI has its own scripts). Exult's font manager says which
-  font the sign gump uses. Extract that font from each game into its own sheet (`data/u7bg/runes.png`,
-  `data/u7si/runes.png`) with each glyph's width: U7 fonts are proportional, so the sheet needs a width
-  table, which the shared helper must support.
+- Work from the Ultima7_Decomp checkout (KarlClinckspoor/Ultima7_Decomp) only. The existing U7 extractor's
+  comments cite Exult for the file formats; leave that code alone, but don't add new Exult-based code or
+  references.
+- Find where the texts are kept. The sign, plaque, gravestone and book texts are expected to be in
+  `USECODE`, shown through a usecode intrinsic that opens the sign or book display. In the decompilation, find
+  that intrinsic and its display code, which shapes are signs, plaques, gravestones and books, and how each
+  item's quality or frame picks its text. Extract the texts per game into `u7bg.json` and `u7si.json`.
+- Fonts: `FONTS.VGA` in each game's `STATIC` folder. From the decompilation's sign display code, find which
+  font number it draws with, for each game (Serpent Isle may use a different one). Find the font format
+  there too. Extract that font from each game into its own sheet (`data/u7bg/runes.png`,
+  `data/u7si/runes.png`) with each glyph's width if the font is proportional; the shared helper must then
+  support a width table.
 - Show the text in the item popup (the U7 `cell()`), in runes or translated, and add the texts to search.
-  Check a few signs against the game in Exult or DOSBox (Britain's street signs, a gravestone, a plaque).
+  Check a few signs against the game in DOSBox (Britain's street signs, a gravestone, a plaque).
 
 For each game, add a test along the lines of the U6 one: no character in the runic texts that the font
 leaves blank, and the digraph keys used only where the game uses them. Then update the README's notes for
