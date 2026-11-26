@@ -1,8 +1,12 @@
-# Plan: finish the U6-engine eggs and Ultima VI runes (needs the game files)
+# Plan: finish the U6-engine eggs and runic text in U4, U5, U6 and U7 (needs the game files)
 
 For a local session that has the GOG games and the decompilations next to this repository. A cloud session
-(no game files) did the first part on branch `ccr-da9470be-osbhlv`; what is left needs `U6.CH` and the
-decompiled sources. Delete this file when the work is done.
+(no game files) did the first part on branch `ccr-da9470be-osbhlv`. What is left needs the games' font files
+and the decompiled sources. Delete this file when the work is done.
+
+The goal for runic text, in every game that has it: a "Runic text" choice (Translated / In runes) that draws
+the text in **that game's own rune font**, never another game's. Ultima VI is done apart from extracting its
+font (tasks 2–3). Ultima IV, V and VII are task 6.
 
 ## What is already done (commit "U6 engine: what eggs hatch drawn on the map …")
 
@@ -100,7 +104,60 @@ comment above `eggLine` to cite the decomp's functions instead of Nuvie wherever
 - Check The Savage Empire and Martian Dreams for console errors and for eggs drawn in sensible places
   (myrmidex drones, robosaurs).
 
-### 6. Tests and commit
+### 6. Runic text in Ultima IV, V and VII, each in its own font
+
+First make the U6 code shared. Move `loadRunes` and `runicHTML` (and `translit`) out of
+`js/games/u6/engine.js` into a helper, e.g. `js/lib/runes.js`, that takes a font sheet URL plus a description
+of the font: glyph size, glyphs per row, which characters are runes, digraph keys, and characters to leave
+out. Use the same param in every game: key `runes`, options `[[0, 'Translated'], [1, 'In runes']]`, default 0,
+so a link keeps the choice across games. Each game gets the param only if it has runic text. Keep the CSS
+classes from `css/site.css` (`.sign.runic`, `.rune-word`, `.rune-glyph`), but have the helper set the glyph
+size, since U7's glyphs are not 8 × 8.
+
+Once U6's own font is extracted, remove U6's fallback to Ultima V's font (`data/u5/font1.png` in
+`loadRunes`). The rule is each game's own font. If a font file is missing, the page shows the translation
+and logs how to extract the font.
+
+**Ultima IV**
+- Find out whether the game shows any text in runes (signs, the Codex chamber, the end game, anything that
+  prints with rune glyphs). Check `../u4-decompiled-port` for where the rune glyphs of `CHARSET.EGA` are
+  printed. `data/u4/charset.png` is already extracted, so look at it for rune glyphs and note their codes.
+- If there is runic text: extract it with its rune codes kept (`tools/extract-u4.mjs`), show it where it
+  belongs on the maps, and draw it from `charset.png` (U4's own font).
+- If there is none: say so in the README's Ultima IV notes and give U4 no Runic text choice.
+
+**Ultima V**
+- Signs are made plain at extraction: `scrub()` in `tools/extract-u5.mjs` (around line 188) maps `[ ^ _ ] \`
+  to TH EA ST NG EE, turns `@` into a space and turns bytes above 127 into letters. That throws away which
+  characters were runes. Check in u5d (`ultima.c`, the sign display code) which bytes the game prints from
+  `RUNES.CH` and which from `IBM.CH`: are signs all runes, or do the high-bit bytes switch font?
+- Keep the raw sign text in `u5.json` (for example `raw` beside `text`), and draw it with `data/u5/font1.png`
+  (RUNES.CH) and `data/u5/font0.png` (IBM.CH) where the game switches fonts. Show it in `signHTML` in
+  `js/games/u5/index.js` when the choice is In runes.
+- Other U5 text in runes: talk lines marked `{rune}` (index.js around line 268), and the sextant reading
+  (`sextant` in index.js: "the game prints them in runes"). Draw those in runes too when the choice is on,
+  or leave a note in the code saying why not.
+
+**Ultima VII (The Black Gate and Serpent Isle)**
+- The U7 module (`js/games/u7/engine.js`, `tools/extract-u7.mjs`) shows no sign, plaque, gravestone or book
+  text yet, so this is new work for both games.
+- Find where the texts are kept. They are in USECODE, shown with the sign gump through the usecode
+  intrinsic that displays runes. Exult's source (`gumps/` sign/text gumps and the usecode intrinsics) and
+  Exult's docs say which intrinsic it is, which shapes are signs, plaques, gravestones and books, and how
+  each item's quality or frame picks its text. Extract the texts per game into `u7bg.json` and `u7si.json`.
+- Fonts: `FONTS.VGA` in each game's `STATIC` folder. Find which font number is the runic one, and the
+  Serpent Isle equivalent (it may differ, and SI has its own scripts). Exult's font manager says which
+  font the sign gump uses. Extract that font from each game into its own sheet (`data/u7bg/runes.png`,
+  `data/u7si/runes.png`) with each glyph's width: U7 fonts are proportional, so the sheet needs a width
+  table, which the shared helper must support.
+- Show the text in the item popup (the U7 `cell()`), in runes or translated, and add the texts to search.
+  Check a few signs against the game in Exult or DOSBox (Britain's street signs, a gravestone, a plaque).
+
+For each game, add a test along the lines of the U6 one: no character in the runic texts that the font
+leaves blank, and the digraph keys used only where the game uses them. Then update the README's notes for
+that game.
+
+### 7. Tests and commit
 
 - Run each test on its own: `for t in tests/*.test.mjs; do node "$t" || echo "FAIL $t"; done`.
   (`node --test tests/` fails on Node 22 because it won't take a folder; this predates these changes.
