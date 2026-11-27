@@ -38,6 +38,28 @@ export default makeEngine({
     inView: r => r.status & 0x20,
     where: 'The first creature appears on the egg; the others are moved to free squares near it, out of your sight.',
   },
+  // What an embryo hatches as, square by square (egg.c EGG_generate, EGG_hatches; object.c AddMonster starts a creature
+  // at frame 0): an object type (under the giant rat,
+  // 0x156, but not the open chest) as itself, frame 0; the winged gargoyle and the cyclops at frame 0x13; the two-square
+  // beasts from the giant scorpion (0x1AA) on at frame 6 with their other half east (frame 0xE, a mutant's 2); the
+  // dragon (0x19B) with head north, tail south and wings east and west; the hydra (0x176) amid eight bodies (0x1A9,
+  // frame = direction * 4); the silver serpent (0x19D) coiled, its quantity of body segments and a tail; the tangle
+  // vine pod (0x16D) with four vines (0x16E) on its sides.
+  eggParts: c => {
+    const t = c.type, me = {type: t, frame: 0, dx: 0, dy: 0}, DX = [0, 1, 1, 1, 0, -1, -1, -1], DY = [-1, -1, 0, 1, 1, 1, 0, -1];
+    if (t < 0x156 && t !== 0x062) return [{...me, frame: 0}];
+    if (t === 0x16A || t === 0x1A8) return [{...me, frame: 0x13}];
+    if (t >= 0x1AA) return [{...me, frame: 6}, {type: t, frame: c.status & 0x40 ? 2 : 0xE, dx: 1, dy: 0}];
+    if (t === 0x19B) return [{...me, frame: 0}, {type: t, frame: 8, dx: 0, dy: -1}, {type: t, frame: 0x10, dx: 0, dy: 1}, {type: t, frame: 0x18, dx: -1, dy: 0}, {type: t, frame: 0x20, dx: 1, dy: 0}];
+    if (t === 0x176) return [me, ...DX.map((dx, k) => ({type: 0x1A9, frame: k << 2, dx, dy: DY[k]}))];
+    if (t === 0x19D) {
+      const SX = [0, -1, -1, 0], SY = [1, 1, 0, 0], BODY = [0xD, 0xA, 0xB, 0xC], TAIL = [1, 3, 5, 7], out = [{...me, frame: 0}];
+      for (let s = 0; s <= c.qty; s++) out.push({type: t, frame: (s === c.qty ? TAIL : BODY)[s & 3], dx: SX[s & 3], dy: SY[s & 3]});
+      return out;
+    }
+    if (t === 0x16D) return [{...me, frame: 0}, ...[0, 2, 4, 6].map(k => ({type: 0x16E, frame: k & 2 ? 0 : 1, dx: DX[k], dy: DY[k]}))];
+    return [me];
+  },
   entranceTypes: [0x134, 0x146],   // OBJ_HOLE, OBJ_MINE_SHAFT
   bookTypes: [0x097, 0x03D, 0x098, 0x10E, 0x03B],   // objcmd.c BookTypes: book, Book of Circles, note, balloon plans, Codex
   signTypes: [0x14C, 0x14D, 0x08F, 0x0FE, 0x0FF],   // SignTypes: sign, gargoyle sign, picture, cross, tombstone

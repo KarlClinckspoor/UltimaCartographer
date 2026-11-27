@@ -8,7 +8,9 @@ const DOUBLE_H = 0x40, DOUBLE_W = 0x80, BACKGROUND = 0x20, FOREGROUND = 0x10;   
 const LOCXYZ = 0, CONTAINED = 8, INVISIBLE = 2;
 const hh = h => `${String(h).padStart(2, '0')}:00`;
 const cap = s => s.replace(/^\w/, c => c.toUpperCase());
-const clean = s => (s || '').replace(/\\(\w*)/g, '').replace(/\/\w*/g, '').trim();
+// A name's endings (console.c CON_putch): letters after / are printed only for one, those after \ only for more than
+// one ("loa/f\ves of bread": a loaf of bread, 6 loaves of bread).
+const clean = (s, n = 1) => (s || '').replace(/\/(\w*)/g, n === 1 ? '$1' : '').replace(/\\(\w*)/g, n === 1 ? '' : '$1').trim();
 
 // objlist (console.c GAME_Load): the arrays for objects 0-FFh (the NPCs), then the game state.
 const OL = {status: 0, pos: 0x100, shape: 0x400, amount: 0x600, orig: 5617, state: 7153};
@@ -162,7 +164,10 @@ export function makeEngine(cfg) {
     // An embryo that hatches invisible creatures (cfg.eggRules.hidden) is listed but not drawn.
     for (const z of [0, 1, 2, 3, 4, 5]) for (const r of d.objs[z]) {
       if (r.type !== cfg.objEgg || !r.contents) continue;
-      for (const c of r.contents) if (!cfg.eggRules.hidden?.(c)) place(d, {...c, x: r.x, y: r.y, z, contents: undefined, egg: r}, d.spawnAt);
+      // a creature of several squares hatches with its other parts around it (cfg.eggParts: the game's EGG_generate)
+      for (const c of r.contents) if (!cfg.eggRules.hidden?.(c))
+        for (const pt of cfg.eggParts ? cfg.eggParts(c) : [{type: c.type, frame: c.frame, dx: 0, dy: 0}])
+          place(d, {...c, type: pt.type, frame: pt.frame, x: r.x + pt.dx, y: r.y + pt.dy, z, contents: undefined, egg: r}, d.spawnAt);
     }
     // NPCs 1-FFh with a shape
     d.npcs = [];
@@ -219,8 +224,8 @@ export function makeEngine(cfg) {
   const ACTION = {0x87: 'stands', 0x88: 'stands', 0x89: 'stands', 0x8A: 'stands', 0x8B: 'keeps guard', 0x8C: 'keeps guard', 0x8D: 'keeps guard', 0x8E: 'keeps guard',
     0x8F: 'wanders', 0x90: 'loiters', 0x91: 'sleeps', 0x92: 'sits', 0x93: 'eats', 0x94: 'farms', 0x95: 'works', 0x96: 'works', 0x97: 'plays music', 0x98: 'begs', 0x99: 'works', 0x9A: 'rings the bell', 0x9B: 'brawls', 0x9C: 'mops', 0x0E: 'stays put', 0x0F: 'patrols east-west', 0x10: 'patrols north-south'};
 
-  const tname = (d, t) => cap(clean(d.look[t]) || 'Unnamed object');
-  const oname = (d, r) => tname(d, tileOf(d, r) - 0);
+  const tname = (d, t, n = 1) => cap(clean(d.look[t], n) || 'Unnamed object');
+  const oname = (d, r, n = 1) => tname(d, tileOf(d, r) - 0, n);
 
   // An item's picture, a line high: its tile cut from the tile sheet (16-pixel tiles, 32 a row) as a CSS sprite.
   // Percentages place the tile whatever size the line is. A double-size object shows its base (bottom right) tile.
@@ -244,7 +249,7 @@ export function makeEngine(cfg) {
   }
   function itemLine(d, r, depth = 0) {
     if (r.type === cfg.objEgg) return eggLine(d, r);
-    let s = icon(d, r) + esc(oname(d, r));
+    let s = icon(d, r) + esc(oname(d, r, r.qty > 1 ? r.qty : 1));   // "Loaves of bread (6)", as the game's plural
     if (r.qty > 1) s += ` (${r.qty})`;
     if (r.status & INVISIBLE) s += ' <span class="muted">(invisible)</span>';
     if (cfg.note) s += cfg.note(r);
