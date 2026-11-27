@@ -166,7 +166,7 @@ export function makeEngine(cfg) {
       if (r.type !== cfg.objEgg || !r.contents) continue;
       // a creature of several squares hatches with its other parts around it (cfg.eggParts: the game's EGG_generate)
       for (const c of r.contents) if (!cfg.eggRules.hidden?.(c))
-        for (const pt of cfg.eggParts ? cfg.eggParts(c) : [{type: c.type, frame: c.frame, dx: 0, dy: 0}])
+        for (const pt of cfg.eggParts ? cfg.eggParts(c, d) : [{type: c.type, frame: c.frame, dx: 0, dy: 0}])
           place(d, {...c, type: pt.type, frame: pt.frame, x: r.x + pt.dx, y: r.y + pt.dy, z, contents: undefined, egg: r}, d.spawnAt);
     }
     // NPCs 1-FFh with a shape

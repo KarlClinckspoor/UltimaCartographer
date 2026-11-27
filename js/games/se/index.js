@@ -25,6 +25,32 @@ export default makeEngine({
     note: c => c.type === 0x143 ? 'only one once a story flag is set' : '',
     where: 'The first creature appears on the egg and the others near it; objects land up to 3 squares from it.',
   },
+  // What an embryo hatches as, square by square (egg.c EGG_generate, EGG_hatches): an object (type under 0x11A) as
+  // itself, frame 0 (0xA7 frame 3); the pteranodon (0x120) and the 2 x 2 creatures (npctrack.c IsTwoTileCreature: 0x11B,
+  // 0x12C, 0x147, 0x14A-0x14F) at frame 1, 0x128 at frame 3; the dinosaurs made of several objects (object.c
+  // OBJ_GetCreatureParts: a head type and its body and tail types, each at frame (1 << shift) - 1) with each part on the
+  // side where the head's tile and the part's tile join (their TerrainType bits 0x80 >> side, north east south west);
+  // 0x124 with four 0x11A around it.
+  eggParts: (c, d) => {
+    const t = c.type, me = {type: t, frame: 0, dx: 0, dy: 0}, DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
+    if (t < 0x11A) return [{...me, frame: t === 0xA7 ? 3 : 0}];
+    if (t === 0x120 || [0x11B, 0x12C, 0x147, 0x14A, 0x14B, 0x14C, 0x14D, 0x14E, 0x14F].includes(t)) return [{...me, frame: 1}];
+    if (t === 0x128) return [{...me, frame: 3}];
+    const P = {0x126: [[1, 2, 1], [0x126, 0x125, 0x127]], 0x121: [[1, 0], [0x121, 0x122]], 0x129: [[1, 0], [0x129, 0x12A]],
+      0x12F: [[1, 0], [0x12F, 0x130]], 0x11C: [[1, 0], [0x11C, 0x11D]], 0x131: [[1, 0], [0x131, 0x132]]}[t];
+    if (P) {
+      const [sh, ty] = P, head = (1 << sh[0]) - 1, out = [{...me, frame: head}];
+      for (let i = 1; i < ty.length; i++) {
+        const pf = (1 << sh[i]) - 1;
+        for (let j = 0; j < 4; j++) if ((d.terrain[d.baseTile[t] + head] & (0x80 >> j)) && (d.terrain[d.baseTile[ty[i]] + pf] & (0x80 >> ((j + 2) % 4)))) {
+          out.push({type: ty[i], frame: pf, dx: DX[j], dy: DY[j]}); break;
+        }
+      }
+      return out;
+    }
+    if (t === 0x124) return [me, ...[0, 1, 2, 3].map(j => ({type: 0x11A, frame: 0, dx: DX[j], dy: DY[j]}))];
+    return [me];
+  },
   entranceTypes: [0x14, 0xA3, 0x16, 0xE3, 0x103, 0xA0],
   entrance: r => r.type === 0x14 ? at(T14, r.qual, 1) : r.type === 0xA3 ? at(TA3, r.qual - 101, 2) : r.type === 0x16 ? at(T16, r.qual - 1, r.qual === 8 ? 2 : 0)
     : r.type === 0xE3 ? at(TE3, r.qual - 104, 0) : r.type === 0x103 ? [0xC0, 0x1CC, 0] : r.type === 0xA0 ? [0x9D, 0x89, 3] : null,
