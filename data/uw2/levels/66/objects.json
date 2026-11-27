@@ -1021,6 +1021,6 @@
   {"name": "a move trigger", "item": 416, "x": 37, "y": 19, "fine": [3, 3], "z": 96, "h": 3, "heading": 0, "quality": 36, "owner": 19, "flags": ["invisible", "trigger"], "desc": "runs on (36, 19)", "link": {"kind": "trap", "object": 1020, "trap": "hack trap", "text": "Hack 32: qbert.", "via": []}},
   {"name": "a hack trap", "item": 387, "x": 36, "y": 19, "fine": [0, 0], "z": 96, "h": 3, "heading": 0, "quality": 32, "owner": 3, "flags": ["invisible", "trap"], "desc": "Hack 32: qbert."},
   {"name": "a moongate", "item": 346, "x": 37, "y": 19, "fine": [3, 3], "z": 96, "h": 3, "heading": 2, "quality": 0, "owner": 0},
-  {"name": "a battle axe", "item": 1, "x": 37, "y": 14, "fine": [3, 3], "z": 96, "h": 3, "heading": 0, "quality": 63, "owner": 0, "flags": ["enchanted"]},
+  {"name": "a battle axe", "item": 1, "x": 37, "y": 14, "fine": [3, 3], "z": 96, "h": 3, "heading": 0, "quality": 63, "owner": 0, "flags": ["enchanted"], "of": "LifeStealer"},
   {"name": "special tmap obj", "item": 366, "x": 37, "y": 15, "fine": [4, 0], "z": 96, "h": 3, "heading": 4, "quality": 40, "owner": 28}
 ]

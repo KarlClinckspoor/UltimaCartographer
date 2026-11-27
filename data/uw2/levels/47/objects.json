@@ -959,7 +959,7 @@
   null,
   null,
   null,
-  {"name": "a yellow potion", "item": 227, "x": 36, "y": 40, "fine": [7, 3], "z": 8, "h": 0.25, "heading": 0, "quality": 40, "owner": 0, "flags": ["enchanted"]},
+  {"name": "a yellow potion", "item": 227, "x": 36, "y": 40, "fine": [7, 3], "z": 8, "h": 0.25, "heading": 0, "quality": 40, "owner": 0, "flags": ["enchanted"], "of": "Heal"},
   null,
   null,
   null,

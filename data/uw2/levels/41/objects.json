@@ -940,7 +940,7 @@
   {"name": "a scroll", "item": 310, "x": 10, "y": 33, "fine": [3, 3], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0, "in": 942, "text": "This is partially a test in the judicious use of mana.  You will not be allowed to regain mana after the first section."},
   {"name": "a scroll", "item": 310, "x": 10, "y": 33, "fine": [3, 3], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0, "in": 942, "text": "All items are property of the academy.  Please leave them for the next student."},
   {"name": "a scroll", "item": 310, "x": 10, "y": 33, "fine": [3, 3], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0, "in": 942, "text": "Instructions to students:\nAnyone caught cheating on the exam will be ensorcelled and expelled."},
-  {"name": "mail leggings", "item": 36, "x": 25, "y": 32, "fine": [6, 2], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0, "flags": ["enchanted"]},
+  {"name": "mail leggings", "item": 36, "x": 25, "y": 32, "fine": [6, 2], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0, "flags": ["enchanted"], "of": "Additional Protection"},
   {"name": "a map case", "item": 136, "x": 10, "y": 33, "fine": [5, 0], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0, "contents": ["a scroll", "a scroll", "a scroll"]},
   {"name": "a broken dagger", "item": 199, "x": 20, "y": 33, "fine": [3, 3], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0},
   {"name": "a skull", "item": 195, "x": 25, "y": 32, "fine": [3, 3], "z": 32, "h": 1, "heading": 0, "quality": 40, "owner": 0},

@@ -16,7 +16,7 @@ const flat = c => typeof c === 'string' ? esc(c) : `${esc(c.name)}${c.contents?.
 export function makeUW(cfg) {
   const DATA = new URL(`../../../data/${cfg.id}/`, import.meta.url);
   const HINT = `run UwEditor.Cli export-web --game ${cfg.id} --out data/${cfg.id} (docs/uw-export.md)`;
-  let meta = null, loading = null, teleportIndex = null, enchanting = null;
+  let meta = null, loading = null, teleportIndex = null;
   const levels = new Map();
   const load = () => loading ||= json(new URL('manifest.json', DATA), HINT).then(m => (meta = m));
   const level = id => {
@@ -24,9 +24,7 @@ export function makeUW(cfg) {
       fetch(new URL(`levels/${id}/tiles.bin`, DATA)).then(r => {
         if (!r.ok) { console.warn(`data/${cfg.id}/levels/${id} is missing: ${HINT}`); throw new Error(`Couldn’t load the map data for ${cfg.title}. Try reloading the page.`); }
         return r.arrayBuffer(); }),
-      json(new URL(`levels/${id}/objects.json`, DATA)),
-      // the enchantments the game names (tools/extract-uw-enchant.mjs); without the file, plain names
-      enchanting ||= fetch(new URL('enchant.json', DATA)).then(r => r.ok ? r.json() : {}).catch(() => ({}))]).then(([t, o, e]) => ({tiles: new Uint8Array(t), objects: annotate(o, e[id])})));
+      json(new URL(`levels/${id}/objects.json`, DATA))]).then(([t, o]) => ({tiles: new Uint8Array(t), objects: annotate(o)})));
     return levels.get(id);
   };
   const nameOf = id => meta?.levels.find(l => l.id === id)?.name.replace(/ \(\d+\)$/, '') || `Level ${id}`;

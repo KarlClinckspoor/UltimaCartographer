@@ -61,7 +61,43 @@ charges"). **Ask:** add the words LookAt adds for an identified object (obj/LOOK
 `data/<game>/enchant.json` (object index: of, charges, note); `js/lib/uwnames.js` builds the names.
 Run it again after a re-export (it warns if the objects no longer match LEV.ARK).
 
+## Done: both requests (editor 0.1.59, 2026-11-26)
+
+`data/uw1` and `data/uw2` are exported again with both changes (`enchant.json` and
+`teleports.json` were left as they were). The editor's `docs/WEB-EXPORT.md` describes them.
+
+- **Model UVs.** Each textured model face is now mapped onto the layer's rectangle that is
+  not see-through: the gravestone's v runs from 16/64 to 1. The layers this changes are
+  exactly the ones listed above (UW1 15, UW2 12). The opaque-box remap in
+  `uwviewer/viewer.js` can go. Left in place it does no harm: it would remap a second time,
+  so take it out rather than leave it.
+- **Enchantments.** An object's entry in `objects.json` has, where the game's look adds them
+  for an identified object (LOOK.C `do_of`):
+  `of` (the name: "Unsurpassed Protection", "Fireball"; "Poison" for a UW2 potion holding a
+  poison trap), `charges` (the spell object's charges: "with 8 full charges"; a UW2 potion
+  shows 1), `cursed` (true; the look names no curse) and `note` (a UW2 melee weapon's
+  Accuracy or Damage enchantment, effects 0-7: what it really does, as the game swaps them).
+  `tools/extract-uw-enchant.mjs` and `enchant.json` are no longer needed; `js/lib/uwnames.js`
+  can read `of` and `charges` from the objects. `note` is given only for melee weapons
+  (combat/COMBAT.C `DoPlayerWeapon` is where the swap is), not for bows and crossbows.
+
 Not done on the editor's side: the pixel comparison with the editor's 3D view (there is no
 viewer to draw it with yet), and a run against a real `game.gog`.
 
 `data/uw1` and `data/uw2` hold game data and are not in `.gitignore`.
+
+### Checked on the site's side (2026-11-27)
+
+- **UVs:** in both games every model face's UVs lie inside its layer's opaque box, and each of the
+  padded layers (UW1 15, UW2 12) starts exactly where its picture does (the gravestone at 16/64).
+  `uwviewer/viewer.js` no longer measures or remaps anything.
+- **Enchantments:** `of` and `charges` agree with the old `enchant.json` on every object it named
+  (UW1 153, UW2 190); the UW2 notes say the same in other words. The export also names 3 fountains
+  ("of Heal", kept: the look names them), 3 locks and 50 spell objects, which do_of would too; the
+  site keeps those plain, since a lock sits in its door and a spell object in its wand.
+  `tools/extract-uw-enchant.mjs` and `enchant.json` are gone; `js/lib/uwnames.js` reads the objects.
+- **`cursed`:** the look does name a curse, before the name: obj/LOOK.C `do_mods` adds "cursed "
+  for an identified object whose enchantment is a curse (major 9), in both games ("a cursed
+  crown"). The site words cursed objects so, with a note on what the curse does (combat/SPELLS.C
+  `backfire`: some d8s of damage to whoever uses it, never below 3 hit points). The editor's note
+  above ("the look names no curse") should be corrected.

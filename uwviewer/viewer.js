@@ -43,14 +43,11 @@ const missing = n => { console.warn(`${n} is missing: run UwEditor.Cli export-we
 const fetchBin = async n => { const r = await fetch(url(n)); if (!r.ok) missing(n); return r.arrayBuffer(); };
 const fetchJson = async n => { const r = await fetch(url(n)); if (!r.ok) missing(n); return r.json(); };
 const loadImage = async n => { const r = await fetch(url(n)); return createImageBitmap(await r.blob(), {premultiplyAlpha: 'none', colorSpaceConversion: 'none'}); };
-// the texture strips as one TEXTURE_2D_ARRAY: perFile layers of size x size a file, stacked top to bottom
-// Also measures each layer's drawn part: a picture smaller than a layer (the gravestone's 64 x 48) is stored with
-// see-through rows or columns around it, and a model's face is mapped onto the picture, not the empty margin
-// (bounds: u0, v0, u1, v1 a layer, in 0-1).
+// the texture strips as one TEXTURE_2D_ARRAY: perFile layers of size x size a file, stacked top to bottom. A picture
+// smaller than a layer (the gravestone's 64 x 48) is stored with see-through margins; the export maps model faces onto
+// the picture itself (editor 0.1.59), so the UVs are used as they are.
 async function textureArray(T) {
   const t = gl.createTexture();
-  T.bounds = new Float32Array(T.count * 4);
-  const probe = new OffscreenCanvas(T.size, T.size * T.perFile).getContext('2d', {willReadFrequently: true});
   const bind = () => { gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D_ARRAY, t); };
   bind();
   gl.texStorage3D(gl.TEXTURE_2D_ARRAY, Math.log2(T.size) + 1, gl.RGBA8, T.size, T.size, T.count);
@@ -58,13 +55,6 @@ async function textureArray(T) {
     const img = await loadImage(T.files[i]), n = Math.min(img.height / T.size, T.count - i * T.perFile);
     bind();
     gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i * T.perFile, T.size, T.size, n, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    probe.clearRect(0, 0, T.size, T.size * T.perFile); probe.drawImage(img, 0, 0);
-    const px = probe.getImageData(0, 0, T.size, T.size * n).data, z = T.size;
-    for (let k = 0; k < n; k++) {
-      let x0 = z, y0 = z, x1 = -1, y1 = -1;
-      for (let y = 0; y < z; y++) for (let x = 0; x < z; x++) if (px[((k * z + y) * z + x) * 4 + 3] > 127) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-      T.bounds.set(x1 < 0 ? [0, 0, 1, 1] : [x0 / z, y0 / z, (x1 + 1) / z, (y1 + 1) / z], (i * T.perFile + k) * 4);
-    }
     img.close();
   }
   bind();
@@ -146,8 +136,7 @@ window.__uw = S;
 async function loadGame(game) {
   S.game = game; DATA = new URL(`../data/${game}/`, import.meta.url);
   status('Loading textures…');
-  [S.man, S.light, S.ench] = await Promise.all([fetchJson('manifest.json'), fetchJson('light.json'),
-    fetch(url('enchant.json')).then(r => r.ok ? r.json() : {}).catch(() => ({}))]);   // tools/extract-uw-enchant.mjs
+  [S.man, S.light] = await Promise.all([fetchJson('manifest.json'), fetchJson('light.json')]);
   const T = S.man.textures;
   if (S.tex) gl.deleteTexture(S.tex);
   S.tex = await textureArray(T);
@@ -177,7 +166,7 @@ async function loadLevel(id, place) {
   const [mesh, models, sprites, tiles, objects] = await Promise.all([fetchBin(p + 'mesh.bin'), fetchBin(p + 'models.bin'), fetchBin(p + 'sprites.bin'), fetchBin(p + 'tiles.bin'), fetchJson(p + 'objects.json')]);
   const L = S.man.levels.find(l => l.id === id);
   if (S.level) for (const b of S.level.buffers) gl.deleteBuffer(b);
-  const lv = {id, L, objects: annotate(objects, S.ench?.[id]), tiles: new Uint8Array(tiles), buffers: [], mesh: new DataView(mesh), models: new DataView(models), sprites: new DataView(sprites)};
+  const lv = {id, L, objects: annotate(objects), tiles: new Uint8Array(tiles), buffers: [], mesh: new DataView(mesh), models: new DataView(models), sprites: new DataView(sprites)};
   const buf = data => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); lv.buffers.push(b); return b; };
   const f = (loc, n, type, stride, off, normalized = false) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, type, normalized, stride, off); };
   const i = (loc, n, type, stride, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribIPointer(loc, n, type, stride, off); };
@@ -188,15 +177,6 @@ async function loadLevel(id, place) {
   // models
   lv.modelVao = gl.createVertexArray(); gl.bindVertexArray(lv.modelVao);
   if (L.modelVertices) {
-    // each textured face onto its picture's drawn part (see textureArray)
-    const mv = new DataView(models), B = S.man.textures.bounds;
-    for (let o = 0; o + 28 <= models.byteLength; o += 28) {
-      const layer = mv.getUint16(o + 20, true); if (layer === 65535 || !B) continue;
-      const [u0, v0, u1, v1] = B.subarray(layer * 4, layer * 4 + 4);
-      if (u0 === 0 && v0 === 0 && u1 === 1 && v1 === 1) continue;
-      mv.setFloat32(o + 12, u0 + mv.getFloat32(o + 12, true) * (u1 - u0), true);
-      mv.setFloat32(o + 16, v0 + mv.getFloat32(o + 16, true) * (v1 - v0), true);
-    }
     buf(models); f(0, 3, gl.FLOAT, 28, 0); f(1, 2, gl.FLOAT, 28, 12); i(2, 1, gl.UNSIGNED_SHORT, 28, 20); i(3, 1, gl.UNSIGNED_SHORT, 28, 22); i(4, 1, gl.UNSIGNED_SHORT, 28, 26); }
   // sprites: instanced quads
   lv.spriteVao = gl.createVertexArray(); gl.bindVertexArray(lv.spriteVao);
