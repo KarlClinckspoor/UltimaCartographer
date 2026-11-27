@@ -238,11 +238,14 @@ export function makeEngine(cfg) {
   // game loads around you, those more than 8 squares from you; EGG_hatches hatches one if 1-100 at random is at most
   // its quantity, then marks it hatched whatever the result, and object.c OBJ_PurgeFarLocals clears the mark once you
   // are more than 20 squares away. The hours, how many of each embryo and where they go differ: cfg.eggRules.
+  // Ultima VI's look calls an egg "egg"; The Savage Empire's and Martian Dreams' give it the joke they give every
+  // hidden object, "something you shouldn't" (see). Here it is an egg in all three, with their look's words beside it.
+  const eggName = (d, r) => /egg/i.test(oname(d, r)) ? oname(d, r) : 'Egg';
   function eggLine(d, r) {
     const R = cfg.eggRules, when = R.hours?.(r) || '', chance = r.qty >= 100 ? 'every time' : `${r.qty}% of the times`;
     const kids = (r.contents || []).map(c => `<li>${icon(d, c)}${esc(oname(d, c))} ×${R.count(r, c)}${R.note?.(c) ? ` <span class="muted">(${R.note(c)})</span>` : ''}</li>`).join('');
     const never = R.never?.(r);
-    return `${icon(d, r)}${esc(oname(d, r))} <span class="muted">(a hidden spawn point)</span>` + (!kids ? '<p class="muted">It holds nothing, so nothing hatches.</p>'
+    return `${icon(d, r)}${esc(eggName(d, r))} <span class="muted">(a hidden spawn point${/egg/i.test(oname(d, r)) ? '' : `; Look calls it “${esc(clean(d.look[tileOf(d, r)]))}”`})</span>` + (!kids ? '<p class="muted">It holds nothing, so nothing hatches.</p>'
       : never ? `<p class="muted">${never}</p><ul>${kids}</ul>`
       : `<p class="muted">It hatches ${chance} the game loads its area while you are more than 8 squares away${R.inView?.(r) ? ' (this one even when you are nearer)' : ''}${when ? `, ${when}` : ''}, ` +
         `then not again until you have been more than 20 squares away. ${R.where}</p><ul>${kids}</ul>`);
@@ -498,7 +501,7 @@ export function makeEngine(cfg) {
       if (list.length) {
         const items = order(list).reverse();   // the one drawn on top first
         body += `<ul>${items.map(e => `<li>${itemLine(d, e.r)}${isReadable(e.r) ? bookHTML(d, e.r, font) : ''}</li>`).join('')}</ul>`;
-        if (!(peopleAt.get(key) || []).some(e => !e.part)) title = oname(d, items[0].r);
+        if (!(peopleAt.get(key) || []).some(e => !e.part)) title = items[0].r.type === cfg.objEgg ? eggName(d, items[0].r) : oname(d, items[0].r);
         for (const e of items) {
           const r = e.r;
           if (r.type === cfg.objLadder || cfg.entranceTypes.includes(r.type)) { const l = cfg.entrance ? entranceLink(r) : levelLink(d, r); if (l) links.push(l); if (!z && r.qual && cfg.dungeonNames?.[r.qual - 1]) body = p(`<b>${esc(cfg.dungeonName(r.qual))}</b>`) + body; }

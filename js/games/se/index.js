@@ -59,6 +59,9 @@ export default makeEngine({
   bookTypes: [], signTypes: [],
   note: r => r.type === 0xF7 && r.qual === 0
     ? '<p class="sign">Searching here, you find a piece of paper with notes written on it:<br><br>“The statue is of the same materials and workmanship as that golden head Fritz found. It appears to be a mechanism of some sort. I will have to talk to Fritz about this…”</p>'
-    : r.type === 0x31 ? '<p class="muted">Jimmy’s notebook: no one but Jimmy can read his shorthand (“Why don’t you just ask me what you want to know?”).</p>' : '',
+    : r.type === 0x31 ? '<p class="muted">Jimmy’s notebook: no one but Jimmy can read his shorthand (“Why don’t you just ask me what you want to know?”).</p>'
+    // object 0x119: the game's look (LOOK.LZD, tiles 1200-1214) calls it an island, and its tiles have no terrain flags,
+    // so the party can walk on it: the back of the great apatosaurus whose head and tail rise out of the water around it
+    : r.type === 0x119 ? '<p class="muted">The back of a great apatosaurus, its head and tail out of the water beside it. The game calls it an island, and you can walk on it.</p>' : '',
   hidden: [0xE6],
 });
